@@ -33,9 +33,7 @@ void vertex() {
 
 void fragment() {
 
-	vec2 world_camera = (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xz;
-	vec4 a = INV_VIEW_MATRIX * vec4(VERTEX, 1.0);
-    float dist = (distance(a.xz, world_camera));
+	float dist = length(VERTEX);
 
 	
 

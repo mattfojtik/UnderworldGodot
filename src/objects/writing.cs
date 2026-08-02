@@ -8,23 +8,7 @@ namespace Underworld
             var b = new writing(obj);
             var modelNode = b.Generate3DModel(parent, name);
             SetModelRotation(parent, b);
-            //DisplayModelPoints(b,modelNode);
-            if (obj.xpos == 0)
-            {               
-                parent.Position += new Vector3(+0.1f, 0f, 0f);
-            }
-            if (obj.ypos == 0)
-            {
-                parent.Position += new Vector3(0f, 0f, -0.1f);               
-            }
-            if (obj.xpos == 7)
-            {               
-                parent.Position += new Vector3(-0.1f, 0f, 0f);
-            }
-            if (obj.ypos == 7)
-            {
-                parent.Position += new Vector3(0f, 0f, +0.1f);  
-            }
+            AlignToWall(parent, obj, nudgeFactor: 0.08f);
 
             return b;
         }

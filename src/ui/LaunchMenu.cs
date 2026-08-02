@@ -82,6 +82,32 @@ public partial class LaunchMenu : Control
 		var error = ResourceLoader.LoadThreadedRequest(NextScene, "PackedScene", true);
 		GD.PushError($"{Enum.GetName(error)} while preloading main scene.");
 
+		if (_uwSettings.vr)
+		{
+			CallDeferred(MethodName.AutoLaunchVr);
+		}
+
+	}
+
+	private void AutoLaunchVr()
+	{
+		var path = UWClass._RES == UWClass.GAME_UW2 ? _uwSettings.pathuw2 : _uwSettings.pathuw1;
+		if (!Directory.Exists(path))
+		{
+			GD.PushWarning($"VR auto-launch skipped: game path not found ({path}). Configure paths in settings.json.");
+			return;
+		}
+
+		UWClass.BasePath = path;
+		var scene = ResourceLoader.LoadThreadedGet(NextScene) as PackedScene;
+		if (scene == null)
+		{
+			scene = GD.Load<PackedScene>(NextScene);
+		}
+		if (scene != null)
+		{
+			GetTree().ChangeSceneToPacked(scene);
+		}
 	}
 
 	public void _on_synth_path_gui_input(InputEvent @event)
@@ -111,7 +137,7 @@ public partial class LaunchMenu : Control
 		GameFilesSelector.Show();
 	}
 
-	public void OnPathInput(InputEvent @event, int selection)
+	public void _on_game_path_gui_input(InputEvent @event, long selection)
 	{
 		// Seems dumb at the moment, but this lets us process multiple
 		// event types, such as InputEventKey. Feels like this should
@@ -165,7 +191,7 @@ public partial class LaunchMenu : Control
 
 	}
 
-	public void OnGameFilesSelectorSubmitted(string path)
+	public void _on_game_files_selector_file_selected(string path)
 	{
 		//Debug.Print($"GameFilesSelector submitted {path}");
 		if (LoadingSynthPath)
@@ -207,7 +233,7 @@ public partial class LaunchMenu : Control
 
 	}
 
-	public void OnLaunchInput(InputEvent @event, int selection)
+	public void _on_game_launch_gui_input(InputEvent @event, long selection)
 	{
 
 		// Filter appropriate event triggers.

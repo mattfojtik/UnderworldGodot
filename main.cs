@@ -115,6 +115,21 @@ public partial class main : Node3D
 		ObjectCreator.grObjects.UseCropping = true;
 		Palette.CurrentPalette = 0;
 		uimanager.instance.InitUI();
+
+		if (uwsettings.instance.vr)
+		{
+			VrController.TryInitialize(instance);
+			uimanager.CurrentGameMode = uimanager.GameModes.GAME;
+			if (uwsettings.instance.datafolder.Equals("DATA", StringComparison.OrdinalIgnoreCase))
+			{
+				VrController.InitExplorePlayer();
+			}
+			uimanager.instance.JourneyOnwards(uwsettings.instance.datafolder);
+			VrController.FinishWorldSetup(instance);
+			XMIMusic.PickLevelThemeMusic(0);
+			return;
+		}
+
 		if (UWClass._RES != UWClass.GAME_UWDEMO)
 		{
 			uimanager.EnableDisable(uimanager.instance.uw1UI, false);
@@ -186,9 +201,13 @@ public partial class main : Node3D
 	}
 
 
-	// Called every frame. 'delta' is the elapsed time since the previous frame.
 	public override void _PhysicsProcess(double delta)
 	{
+		if (uwsettings.instance.vr)
+		{
+			VrController.TickRuntime((float)delta);
+		}
+
 		if ((uimanager.InGame) || (uimanager.AtMainMenu) || (uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE))
 		{
 			PitTimer += delta;
@@ -379,6 +398,16 @@ public partial class main : Node3D
 	{
 		motion.PlayerMotionWalk_77C = 0;
 		motion.PlayerMotionHeading_77E = 0;
+
+		if (VrController.IsActive)
+		{
+			VrController.ApplyMotionInputs();
+			if (motion.MotionInputPressed != 0)
+			{
+				return;
+			}
+		}
+
 		if (Input.IsKeyPressed(Key.W))
 		{
 			if (Input.IsKeyPressed(Key.Shift))//forwards

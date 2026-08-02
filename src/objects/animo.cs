@@ -64,6 +64,10 @@ namespace Underworld
             parent.AddChild(a_sprite);
             a_sprite.Position = new Vector3(0, NewSize.Y / 2 + 0f, 0);
             a_sprite.CreateConvexCollision();
+            if (obj.xpos == 0 || obj.xpos == 7 || obj.ypos == 0 || obj.ypos == 7)
+            {
+                model3D.AlignToWall(parent, obj, nudgeFactor: 0.18f);
+            }
             return a;
         }
 

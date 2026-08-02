@@ -15,6 +15,21 @@ namespace Underworld
         /// </summary>
         public static Vector3 godotscale = new(x: 76.8f, y: 4.8f, z: 76.8f);
 
+        /// <summary>VR world scale multiplier (1 = flat game, 2 = default VR).</summary>
+        public static float WorldScaleFactor { get; set; } = 1f;
+
+        public static float TileWidth => 1.2f * WorldScaleFactor;
+        public static float HalfTileWidth => TileWidth * 0.5f;
+        public static float HeightStep => 0.15f * WorldScaleFactor;
+
+        /// <summary>World-space width of one wall texture texel (64 texels span a tile face).</summary>
+        public static float WallTexelWorld => TileWidth / 64f;
+
+        /// <summary>Distance from the tilemap wall plane to a wall-mounted face, in wall texels.</summary>
+        public static float WallFaceStandoffTexels { get; set; } = 1f;
+
+        public static float WallFaceStandoffWorld => WallFaceStandoffTexels * WallTexelWorld;
+
         public static Node3D worldnode;
         const int TILE_SOLID = 0;
         const int TILE_OPEN = 1;

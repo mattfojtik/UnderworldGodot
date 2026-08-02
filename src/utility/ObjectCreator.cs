@@ -251,6 +251,11 @@ namespace Underworld
             {
                 Debug.Print($"{name} is null!");
             }
+
+            if (uwsettings.instance.vr)
+            {
+                VrController.FinalizeObjectVisualScale(newNode, obj, unimplemented);
+            }
         }
 
         private static void PrintObjectLabel(uwObject obj, string name, Node3D newNode)

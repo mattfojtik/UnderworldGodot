@@ -78,6 +78,23 @@ public class uwsettings
     public string pathuw2 { get; set; } = @"C:\Games\UW2";
     public string gametoload { get; set; } = "UW1";
     public int level { get; set; } = 0;
+    /// <summary>When true, start in OpenXR VR mode with head tracking and thumbstick movement.</summary>
+    public bool vr { get; set; } = false;
+    /// <summary>Flip thumbstick forward/back if walk direction feels reversed (common on Quest Link).</summary>
+    public bool vr_invert_stick_y { get; set; } = false;
+    /// <summary>DATA or SAVE0..SAVE4 — used when vr skips menus and loads straight into a level.</summary>
+    public string datafolder { get; set; } = "DATA";
+    /// <summary>Print VR diagnostics and draw bright debug geometry in the headset.</summary>
+    public bool vr_debug { get; set; } = true;
+    /// <summary>World scale in VR (corridors, ceilings, sprites). Applied before level load. Higher = feel shorter.</summary>
+    public float vr_world_scale { get; set; } = 2.7f;
+    /// <summary>
+    /// When true, show the flat SubViewport render on a screen in the headset (legacy fallback).
+    /// When false (default), render the dungeon world directly in stereoscopic VR.
+    /// </summary>
+    public bool vr_mirror { get; set; } = false;
+    /// <summary>Show a semi-transparent capsule at the simulated player body (collision position).</summary>
+    public bool vr_show_body { get; set; } = true;
     public float FOV { get; set; } = 75;
     public bool showcolliders { get; set; }
     public int shaderbandsize { get; set; } = 8;

@@ -83,7 +83,7 @@ namespace Underworld
             a_sprite.Mesh.Set("size", n.FrameSize);
             n.sprite = a_sprite;
             parent.AddChild(a_sprite);
-            a_sprite.Position = new Vector3(0, n.FrameSize.Y / 2 + 0.12f, 0);
+            a_sprite.Position = new Vector3(0, n.FrameSize.Y / 2, 0);
             a_sprite.CreateConvexCollision();
 
             if (ObjectCreator.printlabels)
@@ -181,6 +181,7 @@ namespace Underworld
                     // if (_RES==GAME_UW2)
                     // {
                     sprite.Mesh.Set("size", FrameSize);// * 1.5f);
+                    sprite.Position = new Vector3(0, FrameSize.Y / 2, 0);
                     // }
                     // else
                     // {

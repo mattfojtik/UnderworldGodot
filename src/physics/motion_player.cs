@@ -655,15 +655,23 @@ namespace Underworld
             else
             {
                 var di = playerdat.PlayerCameraYaw_dseg_8294;
+                if (VrController.TryGetMotionYaw(out var vrYaw))
+                {
+                    di = vrYaw;
+                }
                 switch (inputcmd)
                 {
                     case 0:
                         arg4 = 0; break;
                     case 1://walk,run,turn
                         {
-                            playerdat.PlayerCameraYaw_dseg_8294 += (short)((((MotionTurnStep_dseg_67d6_775 * ClockIncrement)) * (PlayerMotionHeading_77E / 4)) / 4);
-                            di = playerdat.PlayerCameraYaw_dseg_8294;
-                            PlayerMotionYaw_dseg_67d6_8296 = playerdat.PlayerCameraYaw_dseg_8294;
+                            if (PlayerMotionHeading_77E != 0)
+                            {
+                                playerdat.PlayerCameraYaw_dseg_8294 += (short)((((MotionTurnStep_dseg_67d6_775 * ClockIncrement)) * (PlayerMotionHeading_77E / 4)) / 4);
+                                di = playerdat.PlayerCameraYaw_dseg_8294;
+                            }
+
+                            PlayerMotionYaw_dseg_67d6_8296 = di;
                             arg4 = (short)(((PlayerMotionWalk_77C >> 2) * PlayerActualForwardSpeed_1_dseg_67d6_22A6) / 0x20);
                             dseg_67d6_D0 = 0;
                             break;

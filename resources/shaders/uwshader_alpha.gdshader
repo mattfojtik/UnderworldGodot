@@ -34,9 +34,7 @@ void vertex() {
 
 void fragment() {
 
-	vec3 world_camera = (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xyz;
-	vec4 a = INV_VIEW_MATRIX * vec4(VERTEX, 1.0);
-    float dist = (distance(a.xyz, world_camera));
+	float dist = length(VERTEX);
 
 	//read in greyscale texture to get color index
 		

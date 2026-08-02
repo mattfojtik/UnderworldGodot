@@ -158,7 +158,7 @@ namespace Underworld
             //then transform it into godot positioning using a vector based on the size we are rendering the gameworld in.
             main.cameraYawGimbal.Position = underworldVector * tileMapRender.godotscale;
 
-            if ((CameraIsBobbing_dseg_67d6_33c6) && (applyBob))
+            if ((CameraIsBobbing_dseg_67d6_33c6) && (applyBob) && !VrController.IsActive)
             {
                 yaw += CameraYawModifier_dseg_67d6_33D0;
                 roll += CameraRollModifier_dseg_67d6_33D4;
@@ -168,64 +168,86 @@ namespace Underworld
             CameraTileX = (short)(x >> 8);
             CameraTileY = (short)(y >> 8);
 
-            //Set up the Yaw gimbal             
-            main.cameraYawGimbal.Rotation = Vector3.Zero;
-            main.cameraYawGimbal.Rotate(Vector3.Up, (float)(Math.PI));//align to the north.
-            main.cameraYawGimbal.Rotate(Vector3.Up, (float)(-((float)yaw / 32767f) * Math.PI));
-
-            //Set up the Roll Gimbal
-            main.cameraRollGimbal.Rotation = Vector3.Zero;
-            main.cameraRollGimbal.Rotate(Vector3.Forward, (float)(-((float)roll / 32767f) * Math.PI));
-
-            //Set up the pitch gimbal.
-            main.cameraPitchGimbal.Rotation = Vector3.Zero;
-            main.cameraPitchGimbal.Rotate(Vector3.Right, (float)(+((float)pitch / 32767f) * Math.PI));
-
-            //Set this value to calculate npc angles
-            playerdat.CameraYawHeadingRelated_2B52 = (short)(((1 + (yaw >> 0xD)) & 0x7) >> 1);
-            playerdat.CameraPointer2C = (short)(yaw - motion.PlayerCardinalHeadingLookupTable[playerdat.CameraYawHeadingRelated_2B52]);
-
-            //The following code is used to draw the automap.
-            //first the camera values must be updated depending on the player direction.
-            x = (short)(x & 0xFF);
-            y = (short)(y & 0xFF);
-            switch (playerdat.CameraYawHeadingRelated_2B52)
+            if (VrController.IsActive && uwsettings.instance.vr_mirror)
             {
-                case 1:
-                    {
-                        var si = x;
-                        x = (short)(0xFF - y);
-                        y = si;
-                        break;
-                    }
-                case 2:
-                    {
-                        x = (short)(0xFF - x);
-                        y = (short)(0xFF - y);
-                        break;
-                    }
-                case 3:
-                    {
-                        var si = x;
-                        x = y;
-                        y = (short)(0xFF - si);
-                        break;
-                    }
+                // Body position from simulation; head orientation from OpenXR (see SyncMirrorHeadLook).
+                VrController.SyncMirrorHeadLook();
             }
+            else if (VrController.IsActive && !uwsettings.instance.vr_mirror)
+            {
+                // Body position/yaw from simulation; head look comes from OpenXR on the XRCamera.
+                main.cameraYawGimbal.Rotation = Vector3.Zero;
+                main.cameraYawGimbal.Rotate(Vector3.Up, (float)(Math.PI));
+                main.cameraYawGimbal.Rotate(Vector3.Up, (float)(-((float)yaw / 32767f) * Math.PI));
 
-            yaw = (short)(yaw - VisionParams.cardinallookup_44A[playerdat.CameraYawHeadingRelated_2B52]);
-           
-            //Set global values needed for visibility checks
-            LOS_x = (short)(x & 0xFF);
-            LOS_y = (short)(y & 0xFF);
+                main.cameraRollGimbal.Rotation = Vector3.Zero;
+                main.cameraPitchGimbal.Rotation = Vector3.Zero;
 
-            VisionParams.SetRangeOfVisionParams(
-                camerax: x,
-                cameray: y,
-                camerayaw: yaw);
+                var visionYaw = VrController.GetHeadYawForVision();
+                VrController.UpdateVisionHeadingFromYaw(visionYaw);
+                VrController.UpdateVisionFromHead(CameraTileX, CameraTileY, visionYaw);
+            }
+            else
+            {
+                //Set up the Yaw gimbal             
+                main.cameraYawGimbal.Rotation = Vector3.Zero;
+                main.cameraYawGimbal.Rotate(Vector3.Up, (float)(Math.PI));//align to the north.
+                main.cameraYawGimbal.Rotate(Vector3.Up, (float)(-((float)yaw / 32767f) * Math.PI));
 
-            VisionParams.GetViewDistance();
-            VisionParams.FakeRender();
+                //Set up the Roll Gimbal
+                main.cameraRollGimbal.Rotation = Vector3.Zero;
+                main.cameraRollGimbal.Rotate(Vector3.Forward, (float)(-((float)roll / 32767f) * Math.PI));
+
+                //Set up the pitch gimbal.
+                main.cameraPitchGimbal.Rotation = Vector3.Zero;
+                main.cameraPitchGimbal.Rotate(Vector3.Right, (float)(+((float)pitch / 32767f) * Math.PI));
+
+                //Set this value to calculate npc angles
+                playerdat.CameraYawHeadingRelated_2B52 = (short)(((1 + (yaw >> 0xD)) & 0x7) >> 1);
+                playerdat.CameraPointer2C = (short)(yaw - motion.PlayerCardinalHeadingLookupTable[playerdat.CameraYawHeadingRelated_2B52]);
+
+                //The following code is used to draw the automap.
+                //first the camera values must be updated depending on the player direction.
+                x = (short)(x & 0xFF);
+                y = (short)(y & 0xFF);
+                switch (playerdat.CameraYawHeadingRelated_2B52)
+                {
+                    case 1:
+                        {
+                            var si = x;
+                            x = (short)(0xFF - y);
+                            y = si;
+                            break;
+                        }
+                    case 2:
+                        {
+                            x = (short)(0xFF - x);
+                            y = (short)(0xFF - y);
+                            break;
+                        }
+                    case 3:
+                        {
+                            var si = x;
+                            x = y;
+                            y = (short)(0xFF - si);
+                            break;
+                        }
+                }
+
+                yaw = (short)(yaw - VisionParams.cardinallookup_44A[playerdat.CameraYawHeadingRelated_2B52]);
+
+                //Set global values needed for visibility checks
+                LOS_x = (short)(x & 0xFF);
+                LOS_y = (short)(y & 0xFF);
+
+                VisionParams.SetRangeOfVisionParams(
+                    camerax: x,
+                    cameray: y,
+                    camerayaw: yaw);
+
+                VisionParams.GetViewDistance();
+                VisionParams.FakeRender();
+            }
 
         }
 

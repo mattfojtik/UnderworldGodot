@@ -7,17 +7,43 @@ namespace Underworld
     {
         int texture;
         Node3D tmapnode;
-        float tmapOffset = 0.1f;//how far out the tmap extrudes from it's origin
+        float tmapOffset;
+
+        float ExtrudeOffset => tmapOffset * tileMapRender.WorldScaleFactor;
+
+        static float WallStandoffUnscaled()
+        {
+            return tileMapRender.WallFaceStandoffWorld / tileMapRender.WorldScaleFactor;
+        }
 
         public tmap(uwObject _uwobject)
         {
             uwobject = _uwobject;
+            tmapOffset = WallStandoffUnscaled();
+        }
+
+        Vector3[] FaceSampleLocals()
+        {
+            var halfW = tileMapRender.HalfTileWidth;
+            var tileW = tileMapRender.TileWidth;
+            var extrude = ExtrudeOffset;
+            return new[]
+            {
+                new Vector3(-halfW, 0f, extrude),
+                new Vector3(halfW, 0f, extrude),
+                new Vector3(halfW, tileW, extrude),
+                new Vector3(-halfW, tileW, extrude),
+            };
+        }
+
+        public void ApplyWallPlacement(Node3D parent)
+        {
+            tmapOffset = WallStandoffUnscaled();
+            PlaceWallMountedDepth(parent, uwobject, FaceSampleLocals(), tileMapRender.WallFaceStandoffTexels);
         }
 
         public static tmap CreateInstance(Node3D parent, uwObject obj, UWTileMap a_tilemap, string name)
         {
-            int tileX = obj.tileX;
-            int tileY = obj.tileY;
             var t = new tmap(obj);
 
             //check if tmap shares space with a door, this deals with a tmap that is over a door in level 4 of UW1
@@ -31,7 +57,6 @@ namespace Underworld
                     if ((door.xpos == obj.xpos) && (door.ypos == obj.ypos))
                     {
                         Debug.Print($"Tmap {obj.index} shares space with door {door.index}");
-                        t.tmapOffset = 0.1f;
                     }
                 }
             }
@@ -40,30 +65,7 @@ namespace Underworld
             t.tmapnode = t.Generate3DModel(parent, name);
            
             SetModelRotation(parent,t);
-            centreAlongAxis(parent, t);
-            
-
-            //adjust to be closer to walls
-            if (obj.xpos == 0)
-            {
-                parent.Position += new Vector3(+0.05f, 0f, 0f);
-            }
-            if (obj.ypos == 0)
-            {
-                parent.Position += new Vector3(0f, 0f, -0.05f);
-            }
-            if (obj.xpos == 7)
-            {
-                parent.Position += new Vector3(-0.05f, 0f, 0f);
-            }
-            if (obj.ypos == 7)
-            {
-                parent.Position += new Vector3(0f, 0f, +0.05f);
-            }
-
-
-
-            //DisplayModelPoints(t, parent);
+            t.ApplyWallPlacement(parent);
             return t;
         }    
 
@@ -81,11 +83,14 @@ namespace Underworld
 
         public override Vector3[] ModelVertices()
         {
+            var halfW = tileMapRender.HalfTileWidth;
+            var tileW = tileMapRender.TileWidth;
+            var extrude = ExtrudeOffset;
             Vector3[] v = new Vector3[4];
-            v[0] = new Vector3(-0.6f, 0f, tmapOffset);//0.0625f);
-            v[1] = new Vector3(0.6f, 0f, tmapOffset);//0.0625f);
-            v[2] = new Vector3(0.6f, 1.2f, tmapOffset);//0.0625f);
-            v[3] = new Vector3(-0.6f, 1.2f, tmapOffset);//..0.0625f);
+            v[0] = new Vector3(-halfW, 0f, extrude);
+            v[1] = new Vector3(halfW, 0f, extrude);
+            v[2] = new Vector3(halfW, tileW, extrude);
+            v[3] = new Vector3(-halfW, tileW, extrude);
             return v;
         }
 

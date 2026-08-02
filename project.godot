@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Underworld"
 run/main_scene="res://scenes/Launch.tscn"
-config/features=PackedStringArray("4.3", "C#", "Forward Plus")
+config/features=PackedStringArray("4.3", "C#", "Mobile")
 config/icon="res://resources/icon/dragon.png"
 
 [display]
@@ -32,4 +32,11 @@ export/convert_text_resources_to_binary=false
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+renderer/rendering_method="mobile"
 environment/defaults/default_clear_color=Color(0, 0, 0, 1)
+
+[xr]
+
+openxr/enabled=true
+shaders/enabled=true
+openxr/action_map="res://openxr_action_map.tres"

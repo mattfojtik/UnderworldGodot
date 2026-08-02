@@ -733,7 +733,10 @@ namespace Underworld
 
         public static void RefreshLighting()
         {
-            RenderingServer.GlobalShaderParameterSet("cutoffdistance", shade.GetViewingDistance(lightlevel));
+            var cutoff = uwsettings.instance.vr
+                ? VrController.VrViewDistance
+                : shade.GetViewingDistance(lightlevel);
+            RenderingServer.GlobalShaderParameterSet("cutoffdistance", cutoff);
             if (previousLightLevel != lightlevel)
             {
                 UpdateAutomap();//refresh automap visibility

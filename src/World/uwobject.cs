@@ -1440,7 +1440,7 @@ namespace Underworld
         {
             float BrushXY = 120f;
             float ResolutionXY = 23f;
-            int tilexy = (int)(offXY / 1.2f);
+            int tilexy = (int)(offXY / tileMapRender.TileWidth);
 
             offXY = offXY * 100f;
             short xypos = (short)((offXY - (tilexy * BrushXY)) / (BrushXY / ResolutionXY));

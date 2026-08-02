@@ -332,24 +332,128 @@ namespace Underworld
         //Center the model in the tile it is in along it's heading
         public static void centreAlongAxis(Node3D ModelParentNode, model3D modelObj)
         {
-            int x = modelObj.uwobject.tileX;
-            int y = modelObj.uwobject.tileY;
-            switch (modelObj.uwobject.heading * 45)
+            AlignToWall(ModelParentNode, modelObj.uwobject);
+        }
+
+        /// <summary>Snap wall-mounted objects to the tile grid and nudge flush to the wall.</summary>
+        public static void AlignToWall(Node3D parent, uwObject obj, float nudgeFactor = 0.1f)
+        {
+            var onWest = obj.xpos == 0;
+            var onEast = obj.xpos == 7;
+            var onNorth = obj.ypos == 0;
+            var onSouth = obj.ypos == 7;
+            var onEdge = onWest || onEast || onNorth || onSouth;
+
+            if (!onEdge)
+            {
+                SnapToTileCenterAlongHeading(parent, obj);
+                return;
+            }
+
+            // Edge-mounted: keep GetCoordinate sub-tile position; nudge toward wall surface.
+            var nudge = nudgeFactor * tileMapRender.WorldScaleFactor;
+            if (onWest)
+            {
+                parent.Position += new Vector3(+nudge, 0f, 0f);
+            }
+            if (onEast)
+            {
+                parent.Position += new Vector3(-nudge, 0f, 0f);
+            }
+            if (onNorth)
+            {
+                parent.Position += new Vector3(0f, 0f, -nudge);
+            }
+            if (onSouth)
+            {
+                parent.Position += new Vector3(0f, 0f, +nudge);
+            }
+        }
+
+        /// <summary>
+        /// Wall plane and inward normal for edge-mounted objects (matches tilemaprender wall faces).
+        /// </summary>
+        public static bool TryGetWallMountFrame(uwObject obj, out Vector3 roomNormal, out Vector3 wallPoint, Vector3 referencePosition)
+        {
+            roomNormal = Vector3.Zero;
+            wallPoint = referencePosition;
+            var tileWidth = tileMapRender.TileWidth;
+            var tileX = obj.tileX;
+            var tileY = obj.tileY;
+
+            if (obj.xpos == 0)
+            {
+                roomNormal = Vector3.Left;
+                wallPoint = new Vector3(-tileX * tileWidth, referencePosition.Y, referencePosition.Z);
+                return true;
+            }
+
+            if (obj.xpos == 7)
+            {
+                roomNormal = Vector3.Right;
+                wallPoint = new Vector3(-(tileX + 1) * tileWidth, referencePosition.Y, referencePosition.Z);
+                return true;
+            }
+
+            if (obj.ypos == 0)
+            {
+                roomNormal = Vector3.Forward;
+                wallPoint = new Vector3(referencePosition.X, referencePosition.Y, tileY * tileWidth);
+                return true;
+            }
+
+            if (obj.ypos == 7)
+            {
+                roomNormal = Vector3.Back;
+                wallPoint = new Vector3(referencePosition.X, referencePosition.Y, (tileY + 1) * tileWidth);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Slide a wall-mounted object along the room normal so every face sample sits exactly
+        /// standoff texels into the room from the tilemap wall plane. Keeps GetCoordinate tangential position.
+        /// </summary>
+        public static void PlaceWallMountedDepth(Node3D parent, uwObject obj, Vector3[] faceSampleLocals, float standoffTexels)
+        {
+            var coord = obj.GetCoordinate();
+            if (!TryGetWallMountFrame(obj, out var roomNormal, out var wallPoint, coord))
+            {
+                return;
+            }
+
+            var standoff = standoffTexels * tileMapRender.WallTexelWorld;
+            parent.Position = coord;
+            var basis = parent.Transform.Basis;
+
+            var minDepth = float.MaxValue;
+            foreach (var local in faceSampleLocals)
+            {
+                var depth = (parent.Position + basis * local - wallPoint).Dot(roomNormal);
+                if (depth < minDepth)
+                {
+                    minDepth = depth;
+                }
+            }
+
+            parent.Position += roomNormal * (standoff - minDepth);
+        }
+
+        static void SnapToTileCenterAlongHeading(Node3D parent, uwObject obj)
+        {
+            int x = obj.tileX;
+            int y = obj.tileY;
+            switch (obj.heading * 45)
             {
                 case tileMapRender.heading0:
-                    ModelParentNode.Position = new Vector3(-(x * 1.2f + 0.6f), ModelParentNode.Position.Y, ModelParentNode.Position.Z);
+                case tileMapRender.heading4:
+                    parent.Position = new Vector3(-(x * tileMapRender.TileWidth + tileMapRender.HalfTileWidth), parent.Position.Y, parent.Position.Z);
                     break;
                 case tileMapRender.heading2:
-                    ModelParentNode.Position = new Vector3(ModelParentNode.Position.X, ModelParentNode.Position.Y, y * 1.2f + 0.6f);
-                    break;
-                case tileMapRender.heading4:
-                    ModelParentNode.Position = new Vector3(-(x * 1.2f + 0.6f), ModelParentNode.Position.Y, ModelParentNode.Position.Z);
-                    break;
                 case tileMapRender.Heading6:
-                    ModelParentNode.Position = new Vector3(ModelParentNode.Position.X, ModelParentNode.Position.Y, y * 1.2f + 0.6f);
-                    break;
-                default:
-                    System.Diagnostics.Debug.Print($"Unhandled model axis heading. {modelObj.uwobject.item_id} h:{modelObj.uwobject.heading}");
+                    parent.Position = new Vector3(parent.Position.X, parent.Position.Y, y * tileMapRender.TileWidth + tileMapRender.HalfTileWidth);
                     break;
             }
         }
@@ -360,7 +464,7 @@ namespace Underworld
             int x = modelObj.uwobject.tileX;
             int y = modelObj.uwobject.tileY;
 
-            modelParentNode.Position = new Vector3(-(x * 1.2f + 0.6f), modelParentNode.Position.Y, y * 1.2f + 0.6f);
+            modelParentNode.Position = new Vector3(-(x * tileMapRender.TileWidth + tileMapRender.HalfTileWidth), modelParentNode.Position.Y, y * tileMapRender.TileWidth + tileMapRender.HalfTileWidth);
         }
 
     }//end class

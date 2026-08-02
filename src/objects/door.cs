@@ -28,7 +28,7 @@ namespace Underworld
 
         Vector3 pivot = Vector3.Zero;
 
-        public const float framethickness = 0.08f;
+        public static float framethickness => 0.08f * tileMapRender.WorldScaleFactor;
 
         public static bool isOpen(uwObject obj)
         {
@@ -90,8 +90,8 @@ namespace Underworld
 
         public static float GetHeightForIndex(uwObject obj, int index)
         {
-            var unit = 0.8 / NoOfFrames(obj);
-            return (float)(index * unit);
+            var unit = 0.8f * tileMapRender.WorldScaleFactor / NoOfFrames(obj);
+            return index * unit;
         }
 
         static door()
@@ -153,6 +153,21 @@ namespace Underworld
         {
             uwobject = _uwobject;
             uwobject.instance = this;
+        }
+
+        /// <summary>
+        /// VR interaction: unlock (if needed) and toggle without key checks.
+        /// </summary>
+        public static bool VrUse(uwObject obj)
+        {
+            if (obj == null || isMoving(obj))
+            {
+                return false;
+            }
+
+            a_lock.SetIsLocked(obj, false, 0);
+            ToggleDoor(obj);
+            return true;
         }
 
         public static bool Use(uwObject obj)
@@ -546,53 +561,53 @@ namespace Underworld
                 Vector3[] v = new Vector3[28];
 
                 //left vertical bar top
-                v[0] = new Vector3(-0.17625f * 1.2f, 0.8125f * 1.2f, framethickness / 2f);
-                v[1] = new Vector3(-0.13625f * 1.2f, 0.8125f * 1.2f, framethickness / 2f);
+                v[0] = new Vector3(-0.17625f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, framethickness / 2f);
+                v[1] = new Vector3(-0.13625f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, framethickness / 2f);
 
                 //center vertical bar top
-                v[2] = new Vector3(0.02f, 0.8125f * 1.2f, framethickness / 2f);
-                v[3] = new Vector3(-0.02f, 0.8125f * 1.2f, framethickness / 2f);
+                v[2] = new Vector3(0.02f, 0.8125f * tileMapRender.TileWidth, framethickness / 2f);
+                v[3] = new Vector3(-0.02f, 0.8125f * tileMapRender.TileWidth, framethickness / 2f);
 
                 //right vertical bar top
-                v[4] = new Vector3(0.17625f * 1.2f, 0.8125f * 1.2f, framethickness / 2f);
-                v[5] = new Vector3(0.13625f * 1.2f, 0.8125f * 1.2f, framethickness / 2f);
+                v[4] = new Vector3(0.17625f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, framethickness / 2f);
+                v[5] = new Vector3(0.13625f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, framethickness / 2f);
 
                 //left vertical bar bottom
-                v[6] = new Vector3(-0.17625f * 1.2f, 0f, framethickness / 2f);
-                v[7] = new Vector3(-0.13625f * 1.2f, 0f, framethickness / 2f);
+                v[6] = new Vector3(-0.17625f * tileMapRender.TileWidth, 0f, framethickness / 2f);
+                v[7] = new Vector3(-0.13625f * tileMapRender.TileWidth, 0f, framethickness / 2f);
 
                 //Centre vertical bar bottom
                 v[8] = new Vector3(0.02f, 0f, framethickness / 2f);
                 v[9] = new Vector3(-0.02f, 0f, framethickness / 2f);
 
                 //right vertical bar bottom
-                v[10] = new Vector3(0.17625f * 1.2f, 0f, framethickness / 2f);
-                v[11] = new Vector3(0.13625f * 1.2f, 0f, framethickness / 2f);
+                v[10] = new Vector3(0.17625f * tileMapRender.TileWidth, 0f, framethickness / 2f);
+                v[11] = new Vector3(0.13625f * tileMapRender.TileWidth, 0f, framethickness / 2f);
 
 
                 //cross bar 1
-                v[12] = new Vector3(-0.3125f * 1.2f, 0.67f * 1.2f, framethickness / 2f);
-                v[13] = new Vector3(-0.3125f * 1.2f, 0.63f * 1.2f, framethickness / 2f);
-                v[14] = new Vector3(0.3125f * 1.2f, 0.67f * 1.2f, framethickness / 2f);
-                v[15] = new Vector3(0.3125f * 1.2f, 0.63f * 1.2f, framethickness / 2f);
+                v[12] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.67f * tileMapRender.TileWidth, framethickness / 2f);
+                v[13] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.63f * tileMapRender.TileWidth, framethickness / 2f);
+                v[14] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.67f * tileMapRender.TileWidth, framethickness / 2f);
+                v[15] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.63f * tileMapRender.TileWidth, framethickness / 2f);
 
                 //cross bar 2
-                v[16] = new Vector3(-0.3125f * 1.2f, 0.5075f * 1.2f, framethickness / 2f);
-                v[17] = new Vector3(-0.3125f * 1.2f, 0.4675f * 1.2f, framethickness / 2f);
-                v[18] = new Vector3(0.3125f * 1.2f, 0.5075f * 1.2f, framethickness / 2f);
-                v[19] = new Vector3(0.3125f * 1.2f, 0.4675f * 1.2f, framethickness / 2f);
+                v[16] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.5075f * tileMapRender.TileWidth, framethickness / 2f);
+                v[17] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.4675f * tileMapRender.TileWidth, framethickness / 2f);
+                v[18] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.5075f * tileMapRender.TileWidth, framethickness / 2f);
+                v[19] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.4675f * tileMapRender.TileWidth, framethickness / 2f);
 
                 //cross bar 3
-                v[20] = new Vector3(-0.3125f * 1.2f, 0.345f * 1.2f, framethickness / 2f);
-                v[21] = new Vector3(-0.3125f * 1.2f, 0.305f * 1.2f, framethickness / 2f);
-                v[22] = new Vector3(0.3125f * 1.2f, 0.345f * 1.2f, framethickness / 2f);
-                v[23] = new Vector3(0.3125f * 1.2f, 0.305f * 1.2f, framethickness / 2f);
+                v[20] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.345f * tileMapRender.TileWidth, framethickness / 2f);
+                v[21] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.305f * tileMapRender.TileWidth, framethickness / 2f);
+                v[22] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.345f * tileMapRender.TileWidth, framethickness / 2f);
+                v[23] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.305f * tileMapRender.TileWidth, framethickness / 2f);
 
                 //cross bar 4
-                v[24] = new Vector3(-0.3125f * 1.2f, 0.1825f * 1.2f, framethickness / 2f);
-                v[25] = new Vector3(-0.3125f * 1.2f, 0.1425f * 1.2f, framethickness / 2f);
-                v[26] = new Vector3(0.3125f * 1.2f, 0.1825f * 1.2f, framethickness / 2f);
-                v[27] = new Vector3(0.3125f * 1.2f, 0.1425f * 1.2f, framethickness / 2f);
+                v[24] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.1825f * tileMapRender.TileWidth, framethickness / 2f);
+                v[25] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.1425f * tileMapRender.TileWidth, framethickness / 2f);
+                v[26] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.1825f * tileMapRender.TileWidth, framethickness / 2f);
+                v[27] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.1425f * tileMapRender.TileWidth, framethickness / 2f);
 
 
                 //0.4875
@@ -605,18 +620,18 @@ namespace Underworld
             else
             {
                 ///Same vertices as the doorframe.
-                //float ceilingAdjustment = (float)(32 - floorheight) * 0.15f;//- position.Y; 
-                //float frameadjustment = (float)(floorheight+4) * 0.15f ;   //0.8125f
+                //float ceilingAdjustment = (float)(32 - floorheight) * tileMapRender.HeightStep;//- position.Y; 
+                //float frameadjustment = (float)(floorheight+4) * tileMapRender.HeightStep ;   //0.8125f
 
                 Vector3[] v = new Vector3[8];
-                v[0] = new Vector3(-0.3125f * 1.2f, 0f, 0f); //frame //bottom //right //front           
-                v[1] = new Vector3(-0.3125f * 1.2f, 0.8125f * 1.2f, 0f); //frame //right //top //front
-                v[2] = new Vector3(0.3125f * 1.2f, 0.8125f * 1.2f, 0f);  //frame // left //top //front
-                v[3] = new Vector3(0.3125f * 1.2f, 0f, 0f);//frame // left //bottom //front
-                v[4] = new Vector3(-0.3125f * 1.2f, 0f, framethickness);  //rear
-                v[5] = new Vector3(-0.3125f * 1.2f, 0.8125f * 1.2f, framethickness); //frame //rear
-                v[6] = new Vector3(0.3125f * 1.2f, 0.8125f * 1.2f, framethickness);  //frame //rear
-                v[7] = new Vector3(0.3125f * 1.2f, 0f, framethickness);  //rear 
+                v[0] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0f, 0f); //frame //bottom //right //front           
+                v[1] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, 0f); //frame //right //top //front
+                v[2] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, 0f);  //frame // left //top //front
+                v[3] = new Vector3(0.3125f * tileMapRender.TileWidth, 0f, 0f);//frame // left //bottom //front
+                v[4] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0f, framethickness);  //rear
+                v[5] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, framethickness); //frame //rear
+                v[6] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, framethickness);  //frame //rear
+                v[7] = new Vector3(0.3125f * tileMapRender.TileWidth, 0f, framethickness);  //rear 
                 var pivotindex = 0;
                 if (uwobject.doordir == 1)
                 {
@@ -660,13 +675,13 @@ namespace Underworld
                 }
                 else
                 {
-                    float distanceToFloor = (float)(32 - floorheight) * 0.15f; //distance to floor
-                    float distanceToFrameHead = distanceToFloor - (0.8125f * 1.2f);   //0.975
+                    float distanceToFloor = (float)(32 - floorheight) * tileMapRender.HeightStep; //distance to floor
+                    float distanceToFrameHead = distanceToFloor - (0.8125f * tileMapRender.TileWidth);   //0.975
 
-                    float ceilingHeight = 32 * 0.15f;  //4.8f
-                    float floor = floorheight * 0.15f;
+                    float ceilingHeight = 32 * tileMapRender.HeightStep;  //4.8f
+                    float floor = floorheight * tileMapRender.HeightStep;
                     distanceToFloor = ceilingHeight - floor;
-                    var vectorToFloor = distanceToFloor / 1.2f;
+                    var vectorToFloor = distanceToFloor / tileMapRender.TileWidth;
                     var vectorToFrameHead = (vectorToFloor / distanceToFloor) * distanceToFrameHead;
 
                     var frameV0 = 0.185f;
@@ -948,7 +963,7 @@ namespace Underworld
         //const float doorwidth = 0.8f;
         //const float doorframewidth = 1.2f;
         // const float doorSideWidth = (doorframewidth - doorwidth) / 2f;
-        // const float doorheight = 7f * 0.15f;
+        // const float doorheight = 7f * tileMapRender.HeightStep;
 
         public int texture;
         public float floorheight;
@@ -998,16 +1013,16 @@ namespace Underworld
             switch (dw.uwobject.heading * 45)
             {//align model node in centre of tile along it's axis
                 case tileMapRender.Heading6:
-                    parent.Position = new Vector3(parent.Position.X, parent.Position.Y, (tileY * 1.2f) + 0.6f);
+                    parent.Position = new Vector3(parent.Position.X, parent.Position.Y, (tileY * tileMapRender.TileWidth) + tileMapRender.HalfTileWidth);
                     break;
                 case tileMapRender.heading2:
-                    parent.Position = new Vector3(parent.Position.X, parent.Position.Y, (tileY * 1.2f) + 0.6f);
+                    parent.Position = new Vector3(parent.Position.X, parent.Position.Y, (tileY * tileMapRender.TileWidth) + tileMapRender.HalfTileWidth);
                     break;
                 case tileMapRender.heading4:
-                    parent.Position = new Vector3((tileX * -1.2f) - 0.6f, parent.Position.Y, parent.Position.Z);
+                    parent.Position = new Vector3((tileX * -tileMapRender.TileWidth) - tileMapRender.HalfTileWidth, parent.Position.Y, parent.Position.Z);
                     break;
                 case tileMapRender.heading0:
-                    parent.Position = new Vector3((tileX * -1.2f) - 0.6f, parent.Position.Y, parent.Position.Z);
+                    parent.Position = new Vector3((tileX * -tileMapRender.TileWidth) - tileMapRender.HalfTileWidth, parent.Position.Y, parent.Position.Z);
                     break;
                 default:
                     Debug.Print("Unhandled model centre");
@@ -1030,30 +1045,30 @@ namespace Underworld
 
         public override Vector3[] ModelVertices()
         {
-            float ceilingAdjustment = (float)(32 - floorheight) * 0.15f;//- position.Y;   //distance from object to ceiling
-                                                                        //float frameadjustment = (float)(floorheight+4) * 0.15f ;   //0.8125f
+            float ceilingAdjustment = (float)(32 - floorheight) * tileMapRender.HeightStep;//- position.Y;   //distance from object to ceiling
+                                                                        //float frameadjustment = (float)(floorheight+4) * tileMapRender.HeightStep ;   //0.8125f
 
             Vector3[] v = new Vector3[20];
-            v[0] = new Vector3(-0.3125f * 1.2f, 0f, 0f);
-            v[1] = new Vector3(-0.3125f * 1.2f, 0.8125f * 1.2f, 0f); //frame
-            v[2] = new Vector3(0.3125f * 1.2f, 0.8125f * 1.2f, 0f);  //frame
-            v[3] = new Vector3(0.3125f * 1.2f, 0f, 0f);
-            v[4] = new Vector3(-0.3125f * 1.2f, 0f, door.framethickness);  //rear
-            v[5] = new Vector3(-0.3125f * 1.2f, 0.8125f * 1.2f, door.framethickness); //frame //rear
-            v[6] = new Vector3(0.3125f * 1.2f, 0.8125f * 1.2f, door.framethickness);  //frame //rear
-            v[7] = new Vector3(0.3125f * 1.2f, 0f, door.framethickness);  //rear
-            v[8] = new Vector3(-0.6f, 0f, 0f);
-            v[9] = new Vector3(-0.6f, 0f, door.framethickness);   //rear
-            v[10] = new Vector3(0.6f, 0f, 0f);
-            v[11] = new Vector3(0.6f, 0f, door.framethickness);   //rear
-            v[12] = new Vector3(-0.6f, 0.8125f * 1.2f, 0f);  //level with frame //right
-            v[13] = new Vector3(-0.6f, 0.8125f * 1.2f, door.framethickness); //level with frame //rear //right
-            v[14] = new Vector3(0.6f, 0.8125f * 1.2f, 0f);  //level with frame  //left
-            v[15] = new Vector3(0.6f, 0.8125f * 1.2f, door.framethickness);  //level with frame //rear //left
-            v[16] = new Vector3(-0.6f, ceilingAdjustment, 0f);  //ceiling
-            v[17] = new Vector3(-0.6f, ceilingAdjustment, door.framethickness); //ceiling //rear
-            v[18] = new Vector3(0.6f, ceilingAdjustment, 0f);       //ceiling
-            v[19] = new Vector3(0.6f, ceilingAdjustment, door.framethickness);  //ceiling //rear
+            v[0] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0f, 0f);
+            v[1] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, 0f); //frame
+            v[2] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, 0f);  //frame
+            v[3] = new Vector3(0.3125f * tileMapRender.TileWidth, 0f, 0f);
+            v[4] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0f, door.framethickness);  //rear
+            v[5] = new Vector3(-0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, door.framethickness); //frame //rear
+            v[6] = new Vector3(0.3125f * tileMapRender.TileWidth, 0.8125f * tileMapRender.TileWidth, door.framethickness);  //frame //rear
+            v[7] = new Vector3(0.3125f * tileMapRender.TileWidth, 0f, door.framethickness);  //rear
+            v[8] = new Vector3(-tileMapRender.HalfTileWidth, 0f, 0f);
+            v[9] = new Vector3(-tileMapRender.HalfTileWidth, 0f, door.framethickness);   //rear
+            v[10] = new Vector3(tileMapRender.HalfTileWidth, 0f, 0f);
+            v[11] = new Vector3(tileMapRender.HalfTileWidth, 0f, door.framethickness);   //rear
+            v[12] = new Vector3(-tileMapRender.HalfTileWidth, 0.8125f * tileMapRender.TileWidth, 0f);  //level with frame //right
+            v[13] = new Vector3(-tileMapRender.HalfTileWidth, 0.8125f * tileMapRender.TileWidth, door.framethickness); //level with frame //rear //right
+            v[14] = new Vector3(tileMapRender.HalfTileWidth, 0.8125f * tileMapRender.TileWidth, 0f);  //level with frame  //left
+            v[15] = new Vector3(tileMapRender.HalfTileWidth, 0.8125f * tileMapRender.TileWidth, door.framethickness);  //level with frame //rear //left
+            v[16] = new Vector3(-tileMapRender.HalfTileWidth, ceilingAdjustment, 0f);  //ceiling
+            v[17] = new Vector3(-tileMapRender.HalfTileWidth, ceilingAdjustment, door.framethickness); //ceiling //rear
+            v[18] = new Vector3(tileMapRender.HalfTileWidth, ceilingAdjustment, 0f);       //ceiling
+            v[19] = new Vector3(tileMapRender.HalfTileWidth, ceilingAdjustment, door.framethickness);  //ceiling //rear
             return v;
         }
 
@@ -1176,13 +1191,13 @@ namespace Underworld
         public override Vector2[] ModelUVs(Vector3[] verts)
         {
             Vector2[] v = new Vector2[20];
-            float distanceToFloor = (float)(32 - floorheight) * 0.15f; //distance to floor
-            float distanceToFrameHead = distanceToFloor - (0.8125f * 1.2f);   //0.975
+            float distanceToFloor = (float)(32 - floorheight) * tileMapRender.HeightStep; //distance to floor
+            float distanceToFrameHead = distanceToFloor - (0.8125f * tileMapRender.TileWidth);   //0.975
 
-            float ceilingHeight = 32 * 0.15f;  //4.8f
-            float floor = floorheight * 0.15f;
+            float ceilingHeight = 32 * tileMapRender.HeightStep;  //4.8f
+            float floor = floorheight * tileMapRender.HeightStep;
             distanceToFloor = ceilingHeight - floor;
-            var vectorToFloor = distanceToFloor / 1.2f;
+            var vectorToFloor = distanceToFloor / tileMapRender.TileWidth;
             var vectorToFrameHead = (vectorToFloor / distanceToFloor) * distanceToFrameHead;
 
             var frameV0 = 0.185f;

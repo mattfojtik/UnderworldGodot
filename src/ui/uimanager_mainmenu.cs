@@ -364,7 +364,10 @@ namespace Underworld
             //turn off moongate sucking effect (uw1 endgame)
             playerdat.MoongateSucking = false;
 
-            uimanager.EnableDisable(uimanager.instance.uwviewport,true); //turn on camera, this might be turned off due to player death
+            if (!uwsettings.instance.vr)
+            {
+                uimanager.EnableDisable(uimanager.instance.uwviewport, true); //turn on camera, this might be turned off due to player death
+            }
             playerdat.PositionPlayerCamera();
         }
 

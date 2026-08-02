@@ -334,6 +334,13 @@ namespace Underworld
 
             playerdat.PlayerStatusUpdate();
 
+            if (uwsettings.instance.vr && VrController.IsActive)
+            {
+                playerdat.PositionPlayerCamera();
+                VrController.ResetXrOriginFloorTracking();
+                VrController.SnapRoomOriginToAvatar();
+            }
+
             Debug.Print($"{current_tilemap.uw}");
 
             //uimanager.InGame = true;
