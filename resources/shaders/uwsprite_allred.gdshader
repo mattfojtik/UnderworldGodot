@@ -24,6 +24,7 @@ global uniform sampler2D smoothpalette: source_color,filter_nearest; // pals.dat
 global uniform sampler2D xfer: source_color,filter_nearest; //xfer.dat transparency
 global uniform float cutoffdistance; // how far away the scene will render
 global uniform sampler2D simpleshade: source_color,filter_nearest;//shading data for objectinfo layer. used to find darkness
+global uniform bool final_color_pass; // native VR: resolve palette in this pass
 
 uniform int objectindex_lowerbytes;
 uniform int objectindex_upperbytes;
@@ -37,27 +38,27 @@ uniform float camera_offset = 0.0;
 void vertex() {
 	UV=UV*uv1_scale.xy+uv1_offset.xy;
 
-	//https://ask.godotengine.org/152606/how-to-do-i-make-a-shader-a-billboard-face-the-player
+	// Y-axis (cylindrical) billboard: yaw toward camera, keep feet on the floor (no pitch/roll).
+	vec3 cam_x = normalize(vec3(INV_VIEW_MATRIX[0].x, 0.0, INV_VIEW_MATRIX[0].z));
+	if (length(cam_x) < 0.001) {
+		cam_x = vec3(1.0, 0.0, 0.0);
+	}
+	vec3 cam_y = vec3(0.0, 1.0, 0.0);
+	vec3 cam_z = normalize(cross(cam_x, cam_y));
 	mat4 modified_model_view = VIEW_MATRIX * mat4(
-        INV_VIEW_MATRIX[0],
-        INV_VIEW_MATRIX[1],
-        INV_VIEW_MATRIX[2],
-        MODEL_MATRIX[3]
-    );
-    MODELVIEW_MATRIX = modified_model_view;
+		vec4(cam_x, 0.0),
+		vec4(cam_y, 0.0),
+		vec4(cam_z, 0.0),
+		MODEL_MATRIX[3]
+	);
+	MODELVIEW_MATRIX = modified_model_view;
 	VERTEX += camera_offset * normalize((MODELVIEW_MATRIX * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
-	//VERTEX.y = VERTEX.y - 0.1;
 }
 
 
 void fragment() {
 
-	vec2 world_camera = (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xz;
-	vec4 a = INV_VIEW_MATRIX * vec4(VERTEX, 1.0);
-    float dist = (distance(a.xz, world_camera));
-	
-	//Cast to integer to make easier colour comparisons for xfer
-	
+	float dist = final_color_pass ? length(VERTEX) : distance((INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xz, (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xz);
 
 	if (dist > cutoffdistance)
 	{		
@@ -71,6 +72,15 @@ void fragment() {
 		vec4 alphacolour = texture(smoothpalette, vec2(rgba.r, 0));
 		float maptouse = dist/cutoffdistance;
 
+		if (final_color_pass)
+		{
+			// Native VR: resolve palette here (includes xfer indices via palette row 0 alpha).
+			vec4 finalcolour = texture(smoothpalette, vec2(rgba.r, maptouse));
+			ALBEDO = finalcolour.rgb;
+			ALPHA = finalcolour.a;
+		}
+		else
+		{
 		switch(camera_layers)
 		{
 			case 2u: //world without xfer
@@ -131,6 +141,7 @@ void fragment() {
 				ALPHA = alphacolour.a;
 				break;
 			}
-		}			
+		}
+		}
 	}
 }

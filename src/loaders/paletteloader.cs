@@ -172,6 +172,12 @@ namespace Underworld
                 name: "renderfloors",
                 type: RenderingServer.GlobalShaderParameterType.Bool, 
                 defaultValue: true);
+            // Native VR draws World3D directly (no viewport_combination). When true,
+            // *_allred shaders resolve palette indices to final RGB in the spatial pass.
+            RenderingServer.GlobalShaderParameterAdd(
+                name: "final_color_pass",
+                type: RenderingServer.GlobalShaderParameterType.Bool,
+                defaultValue: false);
 
             // RenderingServer.GlobalShaderParameterAdd(
             //     name: "viewport_1",

@@ -26,6 +26,7 @@ global uniform float cutoffdistance; // how far away the scene will render
 global uniform bool renderwalls;
 global uniform bool renderfloors;
 global uniform bool renderceilings;
+global uniform bool final_color_pass; // native VR: resolve palette in this pass
 
 uniform int tileflags;
 uniform int objectindex_lowerbytes;
@@ -38,10 +39,8 @@ void vertex() {
 
 void fragment() {
 
-	vec3 world_camera = (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xyz;
-	vec4 a = INV_VIEW_MATRIX * vec4(VERTEX, 1.0);
-    float dist = (distance(a.xyz, world_camera));
-	
+	// View-space distance is stereo-correct for XR; world-camera distance for flat multi-viewport.
+	float dist = final_color_pass ? length(VERTEX) : distance((INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xyz);
 
 	if (dist > cutoffdistance)
 	{		
@@ -49,7 +48,8 @@ void fragment() {
 	}
 	else
 	{
-		if ((CAMERA_VISIBLE_LAYERS & 8u) != 0u)
+		// Exact ObjectInfo camera only (not VR's multi-layer cull mask).
+		if (!final_color_pass && CAMERA_VISIBLE_LAYERS == 8u)
 		{
 			//object info layer. 
 			//contains tile information. (eg x,y and surface) or object index in the case of 3d models.
@@ -99,12 +99,19 @@ void fragment() {
 			
 			//Get the uv distance offset within the shades.dat image
 			float maptouse = dist/cutoffdistance;
-			
-			//lookup shades.dat data which is stored in smoothpalette using the uv	
-			//vec4 finalcolour = texture(smoothpalette, vec2(rgba.r, maptouse));
-			rgba.g = maptouse;
-			//apply		
-			ALBEDO = rgba.rgb; //finalcolour.rgb;
+
+			if (final_color_pass)
+			{
+				// Native VR: resolve palette here (no viewport_combination pass).
+				vec4 finalcolour = texture(smoothpalette, vec2(rgba.r, maptouse));
+				ALBEDO = finalcolour.rgb;
+			}
+			else
+			{
+				// Multi-viewport: emit index + shade row for viewport_combination.
+				rgba.g = maptouse;
+				ALBEDO = rgba.rgb;
+			}
 		}
 
 	}

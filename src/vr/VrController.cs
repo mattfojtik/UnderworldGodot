@@ -31,8 +31,10 @@ public static class VrController
 	static bool _doorUseWasPressed;
 	static bool _jumpWasPressed;
 	static bool _recenterWasPressed;
+	static bool _quitWasPressed;
 	static bool _xrOriginFloorInitialized;
 	static Vector3 _lastAvatarFloorPos;
+	static short _lastSyncedBodyYaw;
 	static int _debugFrameCounter;
 	static int _setupWaitFrames;
 
@@ -83,6 +85,13 @@ public static class VrController
 	{
 		"ax_button",
 		"a_button",
+	};
+
+	// Left-hand ax_button is Quest X; right-hand ax_button is A (jump).
+	static readonly StringName[] QuitButtonActions =
+	{
+		"ax_button",
+		"x_button",
 	};
 
 	public static void InitExplorePlayer()
@@ -146,7 +155,14 @@ public static class VrController
 
 		tileMapRender.WorldScaleFactor = scale;
 
-		if (Mathf.IsEqualApprox(scale, 1f))
+		var spriteScale = uwsettings.instance.vr_sprite_scale;
+		if (spriteScale <= 0f)
+		{
+			spriteScale = scale;
+		}
+		ArtLoader.SpriteScaleFactor = spriteScale;
+
+		if (Mathf.IsEqualApprox(scale, 1f) && Mathf.IsEqualApprox(spriteScale, 1f))
 		{
 			_vrWorldScaleApplied = true;
 			return;
@@ -162,7 +178,7 @@ public static class VrController
 		}
 
 		_vrWorldScaleApplied = true;
-		GD.Print($"[VR] World scale {scale}x — godotscale={tileMapRender.godotscale}, tilemap.Scale={tilemap?.Scale}");
+		GD.Print($"[VR] World scale {scale}x, sprite scale {spriteScale}x — godotscale={tileMapRender.godotscale}, tilemap.Scale={tilemap?.Scale}");
 	}
 
 	/// <summary>
@@ -408,6 +424,7 @@ public static class VrController
 		}
 		else
 		{
+			ApplyQuitInput();
 			ApplyRecenterInput();
 			SyncXrOriginFromGimbal();
 			ApplyNativeXrTrackingPassthrough();
@@ -532,6 +549,8 @@ public static class VrController
 			Near = 0.05f,
 			Far = 300f,
 			Fov = Math.Max(50, uwsettings.instance.FOV),
+			// Match sprite/world composite layers (not ObjectInfo). Avoids ObjectInfo/default shader paths.
+			CullMask = main.LayerGeo | main.LayerXFER,
 		};
 		_xrOrigin.AddChild(_xrCamera);
 
@@ -604,6 +623,8 @@ public static class VrController
 		_gameViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
 		main.instance.cam_world = _xrCamera;
 		main.cameraPitchGimbal_world = _xrCamera;
+		// Bypass multi-viewport palette composition; resolve colors in spatial shaders.
+		RenderingServer.GlobalShaderParameterSet("final_color_pass", true);
 		SyncXrOriginFromGimbal();
 	}
 
@@ -677,13 +698,15 @@ public static class VrController
 			return;
 		}
 
+		// Follow avatar by delta only — preserves the sticky XZ offset from B-recenter.
+		// Do not pin/compensate to the cyan marker every frame (that causes motion sickness).
 		var floorPos = GetAvatarFloorPos();
-
 		if (!_xrOriginFloorInitialized)
 		{
 			_xrOrigin.GlobalPosition = floorPos;
 			_lastAvatarFloorPos = floorPos;
 			_xrOriginFloorInitialized = true;
+			_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
 		}
 		else
 		{
@@ -691,10 +714,23 @@ public static class VrController
 			_lastAvatarFloorPos = floorPos;
 		}
 
+		// When body yaw changes (snap-turn), keep the headset world XZ fixed so the
+		// view rotates in place instead of orbiting the XROrigin.
+		var yawChanged = playerdat.PlayerCameraYaw_dseg_8294 != _lastSyncedBodyYaw;
+		var headBefore = yawChanged && _xrCamera != null ? _xrCamera.GlobalPosition : Vector3.Zero;
+
 		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
 		_xrOrigin.Rotation = Vector3.Zero;
 		_xrOrigin.Rotate(Vector3.Up, (float)Math.PI);
 		_xrOrigin.Rotate(Vector3.Up, bodyYaw);
+
+		if (yawChanged && _xrCamera != null)
+		{
+			var headAfter = _xrCamera.GlobalPosition;
+			_xrOrigin.GlobalPosition += new Vector3(headBefore.X - headAfter.X, 0f, headBefore.Z - headAfter.Z);
+		}
+
+		_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
 	}
 
 	/// <summary>Mirror mode: XR origin carries body position/yaw; OpenXR rotates the XRCamera for head look.</summary>
@@ -741,7 +777,8 @@ public static class VrController
 	}
 
 	/// <summary>
-	/// Place the XR play space so your head aligns with the game avatar (horizontal only).
+	/// B-recenter only: shift the play space so the headset sits over the cyan avatar (XZ).
+	/// That sticky offset is preserved by <see cref="SyncXrOriginFromGimbal"/> until the next B.
 	/// </summary>
 	public static void SnapRoomOriginToAvatar()
 	{
@@ -758,9 +795,6 @@ public static class VrController
 		var delta = new Vector3(floorPos.X - headWorld.X, 0f, floorPos.Z - headWorld.Z);
 		_xrOrigin.GlobalPosition += delta;
 		_lastAvatarFloorPos = floorPos;
-
-		var headLocal = _xrCamera.Transform.Origin;
-		_xrCamera.Transform = new Transform3D(_xrCamera.Transform.Basis, new Vector3(0f, headLocal.Y, 0f));
 	}
 
 	static void ApplyRecenterInput()
@@ -781,8 +815,28 @@ public static class VrController
 		_recenterWasPressed = pressed;
 	}
 
+	static void ApplyQuitInput()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror)
+		{
+			_quitWasPressed = false;
+			return;
+		}
+
+		// Quest X is left-hand ax_button (right-hand ax_button is A / jump).
+		var pressed = IsButtonPressed(_leftController, QuitButtonActions);
+		if (pressed && !_quitWasPressed)
+		{
+			GD.Print("[VR] Quit requested (X button).");
+			_sceneTree?.Quit();
+		}
+
+		_quitWasPressed = pressed;
+	}
+
 	/// <summary>
-	/// Keep OpenXR head height as reported; only strip room-scale X/Z drift on the local camera.
+	/// Head height from OpenXR; room-scale X/Z is left alone so you can lean/walk in the play space.
+	/// Press B to snap the view back onto the cyan avatar.
 	/// </summary>
 	static void ApplyNativeXrTrackingPassthrough()
 	{
@@ -791,16 +845,11 @@ public static class VrController
 			return;
 		}
 
-		var transform = _xrCamera.Transform;
-		if (transform.Origin.X != 0f || transform.Origin.Z != 0f)
-		{
-			_xrCamera.Transform = new Transform3D(transform.Basis, new Vector3(0f, transform.Origin.Y, 0f));
-		}
-
 		if (uwsettings.instance.vr_debug && Engine.GetProcessFrames() % DebugLogIntervalFrames == 0)
 		{
+			var transform = _xrCamera.Transform;
 			var floorY = GetGameFloorY();
-			GD.Print($"[VR debug] passthrough rawY={transform.Origin.Y:F3} worldEyeY={_xrCamera.GlobalPosition.Y:F3} floorY={floorY:F3}");
+			GD.Print($"[VR debug] passthrough localXZ=({transform.Origin.X:F3},{transform.Origin.Z:F3}) rawY={transform.Origin.Y:F3} worldEyeY={_xrCamera.GlobalPosition.Y:F3} floorY={floorY:F3}");
 		}
 	}
 
@@ -1132,17 +1181,25 @@ public static class VrController
 			return;
 		}
 
-		_bodyMarker = new MeshInstance3D { Name = "VrBodyMarker", Scale = Vector3.One * BodyMarkerScale };
+		_bodyMarker = new MeshInstance3D
+		{
+			Name = "VrBodyMarker",
+			Scale = Vector3.One * BodyMarkerScale,
+			// XR camera culls LayerGeo|LayerXFER; default layer 1 is invisible in native VR.
+			Layers = main.LayerGeo | main.LayerXFER,
+		};
 		var mat = new StandardMaterial3D
 		{
-			AlbedoColor = new Color(0.25f, 0.85f, 1f, 0.45f),
+			AlbedoColor = new Color(0.25f, 0.85f, 1f, 0.55f),
 			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
 			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
 			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			NoDepthTest = true,
 		};
 		_bodyMarker.Mesh = new CapsuleMesh();
 		_bodyMarker.MaterialOverride = mat;
 		underworld.AddChild(_bodyMarker);
+		GD.Print("[VR] Body marker created.");
 	}
 
 	static void UpdateBodyMarker()

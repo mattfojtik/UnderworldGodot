@@ -22,14 +22,17 @@ namespace Underworld
         public bool UseCropping = false;
 
 
-        public static float SpriteScale => 0.02f * tileMapRender.WorldScaleFactor;  //height of 1px of a sprite
+        /// <summary>Multiplier for sprite/NPC pixel→meter size. Defaults to 1; VR sets via vr_sprite_scale.</summary>
+        public static float SpriteScaleFactor { get; set; } = 1f;
+
+        public static float SpriteScale => 0.02f * SpriteScaleFactor;  //height of 1px of a sprite
 
         public static float NPCSpriteScale
         {
             get
             {
                 var baseScale = _RES == GAME_UW2 ? 0.012f : 0.015f;
-                return baseScale * tileMapRender.WorldScaleFactor;
+                return baseScale * SpriteScaleFactor;
             }
         }
        

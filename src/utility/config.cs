@@ -87,8 +87,16 @@ public class uwsettings
     public string datafolder { get; set; } = "DATA";
     /// <summary>Print VR diagnostics and draw bright debug geometry in the headset.</summary>
     public bool vr_debug { get; set; } = true;
-    /// <summary>World scale in VR (corridors, ceilings, sprites). Applied before level load. Higher = feel shorter.</summary>
-    public float vr_world_scale { get; set; } = 2.7f;
+    /// <summary>
+    /// World scale in VR (corridors, ceilings, doors). Applied before level load. Higher = feel shorter.
+    /// Door opening ≈ 0.975 * scale meters. For ~7 ft doors use ~2.18.
+    /// </summary>
+    public float vr_world_scale { get; set; } = 2.18f;
+    /// <summary>
+    /// Sprite/NPC scale factor (independent of vr_world_scale). Applied before level load.
+    /// 0 = match vr_world_scale. At ~2.54, a 48px UW1 NPC is about 6 ft tall.
+    /// </summary>
+    public float vr_sprite_scale { get; set; } = 0f;
     /// <summary>
     /// When true, show the flat SubViewport render on a screen in the headset (legacy fallback).
     /// When false (default), render the dungeon world directly in stereoscopic VR.
