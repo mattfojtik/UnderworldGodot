@@ -214,7 +214,17 @@ namespace Underworld
                 {
                     if (playerdat.play_poison < poisondamage)
                     {
-                        Debug.Print("apply poison to player");
+                        Debug.Print("apply poison to player, needs body part hit to apply");
+                        var rng = Rng.r.Next(6 + poisondamage);
+                        if (rng > critterObjectDat.toughness(playerdat.playerObject.item_id, BodyPartHit))
+                        {
+                            var testdam = 1;
+                            var test = damage.ScaleDamage(playerdat.playerObject.item_id, ref testdam, 0x10);
+                            if (test != 0)
+                            {
+                                playerdat.play_poison = (byte)poisondamage;
+                            }
+                        }
                     }
                 }
             }
@@ -388,13 +398,13 @@ namespace Underworld
                 }
 
                 var result = playerdat.SkillCheck(skillValue: AttackScore + AttackScoreFlankingBonus, targetValue: critterObjectDat.defence(DefendingCharacter.item_id));
-                if (playerdat.PoisonedWeapon)
+                if ((playerdat.PoisonedWeapon))
                 {
-                    if (checkforPoisonableWeapon())
+                    if (checkforPoisonableWeapon(currentweapon))
                     {
-                        if (critterObjectDat.bleed(DefendingCharacter.item_id) != 0)
+                        if (critterObjectDat.bleed(DefendingCharacter.item_id) != 0) //this value is 0 for the player.
                         {
-                            AttackDamage += ((playerdat.Casting + 30) / 40);
+                            AttackDamage += ((playerdat.Casting + 30) / 40); //there is a possible bug in vanilla uw2 where this will apply regardless of who the attacker is
                         }
                     }
                 }
@@ -685,7 +695,7 @@ namespace Underworld
         {
             get
             {
-                switch (WeaponSwingTypePlayer) 
+                switch (WeaponSwingTypePlayer)
                 {
                     case 1:
                         return 2; //bash
@@ -921,10 +931,32 @@ namespace Underworld
         /// Only certain weapons can use a poison enchantment. for the moment return true here.
         /// </summary>
         /// <returns></returns>
-        static bool checkforPoisonableWeapon()
+        static bool checkforPoisonableWeapon(uwObject Weapon)
         {
-            Debug.Print("Checkforpoisonableweapon()");
-            return true;
+            if ((_RES != GAME_UW2) || (Weapon == null))
+            {
+                return false;
+            }
+            if (Weapon.majorclass == 0)
+            {
+                if ((Weapon.minorclass != 0) && (Weapon.minorclass !=1))
+                {
+                    return false;
+                }
+                if ((Weapon.item_id >= 0x7) && (Weapon.item_id < 0xA))
+                {
+                    return false;
+                }
+                if ((Weapon.item_id >= 0x18) && (Weapon.item_id == 0x19))
+                {
+                    return false;
+                }
+                else
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>

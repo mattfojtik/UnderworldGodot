@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Underworld;
 using System.IO;
 using System.Linq;
+using System.ComponentModel;
 
 /// <summary>
 /// Node to initialise the game
@@ -19,17 +20,35 @@ public partial class main : Node3D
 	public static main instance;
 
 	// Called when the node enters the scene tree for the first time.
-	[Export] public Camera3D cam;
-	[Export] public Node3D GimbalYaw;
-	[Export] public Node3D GimbalRoll;
-	public static Camera3D cameraPitchGimbal; //pitch
-	public static Node3D cameraRollGimbal; // up/down
-	public static Node3D cameraYawGimbal; // yaw
+	[Export] public Camera3D cam_world;
+	[Export] public Node3D GimbalYaw_world;
+	[Export] public Node3D GimbalRoll_world;
+	public static Camera3D cameraPitchGimbal_world; //pitch
+	public static Node3D cameraRollGimbal_world; // up/down
+	public static Node3D cameraYawGimbal_world; // yaw
+
+
+	[Export] public Camera3D cam_sprites;
+	[Export] public Node3D GimbalYaw_sprites;
+	[Export] public Node3D GimbalRoll_sprites;
+	public static Camera3D cameraPitchGimbal_sprites; //pitch
+	public static Node3D cameraRollGimbal_sprites; // up/down
+	public static Node3D cameraYawGimbal_sprites; // yaw
+
+
+	[Export] public Camera3D cam_objectinfo;
+	[Export] public Node3D GimbalYaw_objectinfo;
+	[Export] public Node3D GimbalRoll_objectinfo;
+	public static Camera3D cameraPitchGimbal_objectinfo; //pitch
+	public static Node3D cameraRollGimbal_objectinfo; // up/down
+	public static Node3D cameraYawGimbal_objectinfo; // yaw
+
+
+
 	[Export] public AudioStreamPlayer DigitalAudioPlayer;
 	[Export] public RichTextLabel lblPositionDebug;
-	//[Export] public uimanager uwUI;
 
-	[Export] public SubViewport secondarycameras;
+	[Export] public SubViewport secondarycameras; //remove?
 
 	double gameRefreshTimer = 0f;
 	static double testclock = 0;
@@ -50,12 +69,24 @@ public partial class main : Node3D
 	public static byte ThisFrameDelta = 0;
 	static byte PreviousFrameDelta = 0;
 
+	public const uint LayerGeo = 2;
+	public const uint LayerXFER = 4;
+	public const uint LayerObjectInfo = 8;
 	public override void _Ready()
 	{
 		instance = this;
-		cameraPitchGimbal = cam;
-		cameraRollGimbal = GimbalRoll;
-		cameraYawGimbal = GimbalYaw;
+		cameraPitchGimbal_world = cam_world;
+		cameraRollGimbal_world = GimbalRoll_world;
+		cameraYawGimbal_world = GimbalYaw_world;
+
+		cameraPitchGimbal_sprites = cam_sprites;
+		cameraRollGimbal_sprites = GimbalRoll_sprites;
+		cameraYawGimbal_sprites = GimbalYaw_sprites;
+
+
+		cameraPitchGimbal_objectinfo = cam_objectinfo;
+		cameraRollGimbal_objectinfo = GimbalRoll_objectinfo;
+		cameraYawGimbal_objectinfo = GimbalYaw_objectinfo;
 
 		//uimanager.instance = uwUI;	
 		if (uwsettings.instance != null)
@@ -85,15 +116,15 @@ public partial class main : Node3D
 
 	public static void StartGame()
 	{
-		if (cameraPitchGimbal == null)
+		if (cameraPitchGimbal_world == null)
 		{
-			if (instance.cam == null)
+			if (instance.cam_world == null)
 			{
 				Debug.Print("Main Cam instance is null. trying to find it's node");
-				instance.cam = (Camera3D)instance.GetNode("/root/Underworld/WorldViewContainer/SubViewport/Camera3D");
+				instance.cam_world = (Camera3D)instance.GetNode("/root/Underworld/WorldViewContainer/SubViewport/Camera3D");
 			}
-			cameraPitchGimbal = instance.cam;
-			if (cameraPitchGimbal == null)
+			cameraPitchGimbal_world = instance.cam_world;
+			if (cameraPitchGimbal_world == null)
 			{
 				Debug.Print("Gamecam is still null!");
 			}
@@ -108,11 +139,25 @@ public partial class main : Node3D
 				Debug.Print("UIManager is still null!!");
 			}
 		}
-		cameraPitchGimbal.Fov = Math.Max(50, uwsettings.instance.FOV);
+		cameraPitchGimbal_world.Fov = Math.Max(50, uwsettings.instance.FOV);
+		cameraPitchGimbal_sprites.Fov = cameraPitchGimbal_world.Fov;
 		uimanager.EnableDisable(instance.lblPositionDebug, EnablePositionDebug);
+		
 		ObjectCreator.grObjects = new GRLoader(GRLoader.OBJECTS_GR, GRLoader.GRShaderMode.BillboardSpriteShader);
 		ObjectCreator.grObjects.UseRedChannel = true;
-		ObjectCreator.grObjects.UseCropping = true;
+		ObjectCreator.grObjects.UseCropping = false;
+		ObjectCreator.grObjects.XFER = ArtLoader.XferChannnelMode.AllColours;
+
+		// ObjectCreator.grObjectsXfer = new GRLoader(GRLoader.OBJECTS_GR, GRLoader.GRShaderMode.BillboardSpriteShader);
+		// ObjectCreator.grObjectsXfer.UseRedChannel = true;
+		// ObjectCreator.grObjectsXfer.UseCropping = false;
+		// ObjectCreator.grObjectsXfer.XFER = ArtLoader.XferChannnelMode.XFEROnly;
+
+		// ObjectCreator.grObjectsInfo = new GRLoader(GRLoader.OBJECTS_GR, GRLoader.GRShaderMode.BillboardSpriteShader);
+		// ObjectCreator.grObjectsInfo.UseRedChannel = true;
+		// ObjectCreator.grObjectsInfo.UseCropping = false;
+		// ObjectCreator.grObjectsInfo.XFER = ArtLoader.XferChannnelMode.AllColours;
+
 		Palette.CurrentPalette = 0;
 		uimanager.instance.InitUI();
 
@@ -196,10 +241,28 @@ public partial class main : Node3D
 			a_sprite.Mesh.Set("size", NewSize);
 			Node3D worldobjects = instance.GetNode<Node3D>("/root/Underworld/worldobjects");
 			worldobjects.AddChild(a_sprite);
-			a_sprite.Position = cameraPitchGimbal.Position;
+			a_sprite.Position = cameraPitchGimbal_world.Position;
 		}
 	}
 
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		if (uimanager.InGame)
+		{
+			var mat = (ShaderMaterial)uimanager.instance.uwviewport.Material;
+			mat.SetShaderParameter("viewport_1", (Texture)uimanager.instance.uwsubviewport_world.GetTexture());
+			mat.SetShaderParameter("viewport_2", (Texture)uimanager.instance.uwsubviewport_sprites.GetTexture());
+			if (UWClass._RES == UWClass.GAME_UW2)
+			{
+				mat.SetShaderParameter("uwgame", (int)2);
+			}
+			else
+			{
+				mat.SetShaderParameter("uwgame", (int)1);				
+			}			
+		}
+	}
 
 	public override void _PhysicsProcess(double delta)
 	{
@@ -224,10 +287,10 @@ public partial class main : Node3D
 				PitTimer = 0;
 				// if ((GlobalPITTimer % 32) == 0)
 				// {
-					if (uimanager.InGame)
-					{
-						uimanager.AnimateFlasks();	
-					}					
+				if (uimanager.InGame)
+				{
+					uimanager.AnimateFlasks();
+				}
 				//}
 			}
 		}
@@ -260,7 +323,7 @@ public partial class main : Node3D
 
 		testclock += delta;
 
-		if ((uimanager.InGame) && (testclock >= 0.097659))
+		if ((uimanager.InGame) && (testclock >= 0.097659) && (!uimanager.blockinput))
 		{
 			testclock = 0;
 			byte AnimationFrameDeltaIncrement = 0;
@@ -282,17 +345,13 @@ public partial class main : Node3D
 									  //Setting value too low prevents some motion in certain directions from working.
 			}
 
-			if (ClockIncrement != 0)
+			if ((ClockIncrement != 0) && (!uimanager.blockinput))
 			{
 				ProcessMotionInputs();
 				if (AnimationFrameDeltaIncrement != 0)
 				{
-					//if animations enabled
-					if ((uimanager.InGame) && (!uimanager.blockmouseinput))
-					{
-						AnimationOverlay.UpdateAnimationOverlays();
-						timers.RunTimerTriggers(AnimationFrameDeltaIncrement);
-					}
+					AnimationOverlay.UpdateAnimationOverlays();
+					timers.RunTimerTriggers(AnimationFrameDeltaIncrement);
 				}
 				playerdat.ClockValue += (int)ClockIncrement;
 				LastGlobalPitTimer = GlobalPITTimer;
@@ -311,12 +370,10 @@ public partial class main : Node3D
 					AnimationFrameDelta: AnimationFrameDeltaIncrement,
 					EasyMove: false);
 
-
-
 			}
 		}
 
-		if (uimanager.InGame)
+		if ((uimanager.InGame) && (!uimanager.blockinput))
 		{
 			combat.CombatInputHandler(delta);//may need to be moved outside this block
 			playerdat.PlayerTimedLoop(delta);
@@ -326,11 +383,10 @@ public partial class main : Node3D
 		//Other updates
 		if (uimanager.InGame)
 		{
-
 			if (EnablePositionDebug)
 			{
 				var fps = Engine.GetFramesPerSecond();
-				lblPositionDebug.Text = $"FPS:{fps} Time:{playerdat.game_time} PIT:{GlobalPITTimer}\nL:{playerdat.dungeon_level} X:{playerdat.playerObject.npc_xhome} Y:{playerdat.playerObject.npc_yhome}\nMouseposition:{uimanager.instance.uwsubviewport.GetMousePosition()}\nPlayer Coordinates {motion.playerMotionParams.x_0} {motion.playerMotionParams.y_2} {motion.playerMotionParams.z_4}";
+				lblPositionDebug.Text = $"FPS:{fps} Time:{playerdat.game_time} PIT:{GlobalPITTimer}\nL:{playerdat.dungeon_level} X:{playerdat.playerObject.npc_xhome} Y:{playerdat.playerObject.npc_yhome}\nMouseposition:{uimanager.instance.uwviewport.GetLocalMousePosition()}\nPlayer Coordinates {motion.playerMotionParams.x_0} {motion.playerMotionParams.y_2} {motion.playerMotionParams.z_4}";
 			}
 
 			if ((MessageDisplay.WaitingForTypedInput) || (MessageDisplay.WaitingForYesOrNo))
@@ -701,7 +757,7 @@ public partial class main : Node3D
 					MessageDisplay.WaitingForMore = false;
 					return; //don't process any more clicks here.
 				}
-				if (!uimanager.blockmouseinput)
+				if (!uimanager.blockinput)
 				{
 					if (uimanager.IsMouseInViewPort())
 					{
@@ -713,7 +769,7 @@ public partial class main : Node3D
 		}
 
 
-		if ((!uimanager.blockmouseinput) && (uimanager.InGame))
+		if ((!uimanager.blockinput) && (uimanager.InGame))
 		{
 			if (@event is InputEventKey keyinput)
 			{
@@ -1020,17 +1076,23 @@ public partial class main : Node3D
 						case Key.Escape:
 							stop = true;
 							uimanager.instance.TypedInput.Text = "No";
+							MessageDisplay.YesNoOption = "No";
 							break;
 						case Key.Y:
-							uimanager.instance.TypedInput.Text = "Yes"; break;
+							uimanager.instance.TypedInput.Text = "Yes";
+							MessageDisplay.YesNoOption = "Yes";
+							break;
 						default:
-							uimanager.instance.TypedInput.Text = "No"; break;
+							uimanager.instance.TypedInput.Text = "No";
+							MessageDisplay.YesNoOption = "No";
+							break;
 					}
 					if (stop)
 					{//end typed input
 						uimanager.instance.scroll.Clear();
 						MessageDisplay.WaitingForYesOrNo = false;
-						cameraPitchGimbal.Set("MOVE", true);//re-enable movement
+						MessageDisplay.YesNoOption = "";
+						cameraPitchGimbal_world.Set("MOVE", true);//re-enable movement
 					}
 				}
 			}

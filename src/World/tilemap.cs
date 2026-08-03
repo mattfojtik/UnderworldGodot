@@ -377,12 +377,12 @@ namespace Underworld
         /// </summary>
         public static void LoadTextures()
         {
-            tileMapRender.mapTexturesWalls = new(_usehighdetail: playerdat.RenderWalls);//refresh textures
-            tileMapRender.mapTexturesFloors = new(_usehighdetail: playerdat.RenderFloors);
-            tileMapRender.mapTexturesCeilings = new(_usehighdetail: playerdat.RenderCeilings);
+            tileMapRender.mapTexturesWalls = new(_usehighdetail: true); //playerdat.RenderWalls);//refresh textures
+            tileMapRender.mapTexturesFloors = new(_usehighdetail: true); //playerdat.RenderFloors);
+            tileMapRender.mapTexturesCeilings = new(_usehighdetail: true); //playerdat.RenderCeilings);
 
             model3D.ClearTmObj(); // to force modesl to use refreshed textures. 
-            door.tmDoor = new GRLoader(GRLoader.DOORS_GR, GRLoader.GRShaderMode.TextureShader, playerdat.DetailLevel > 0);
+            door.tmDoor = new GRLoader(GRLoader.DOORS_GR, GRLoader.GRShaderMode.TextureShader);
             door.tmDoor.UseRedChannel = true;
         }
 
@@ -1203,7 +1203,6 @@ namespace Underworld
             int offset = 0;
             for (int i = 0; i < textureMapSize; i++)//256
             {
-                //TODO: Only use this for texture lookups.
                 switch (_RES)
                 {
                     case GAME_UWDEMO:

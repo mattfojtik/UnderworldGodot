@@ -17,6 +17,9 @@ public static class VrController
 	static bool _vrWorldScaleApplied;
 
 	static SubViewport _gameViewport;
+	static Node3D _mirrorYawGimbal;
+	static Node3D _mirrorRollGimbal;
+	static Node3D _mirrorPitchGimbal;
 	static XROrigin3D _xrOrigin;
 	static XRCamera3D _xrCamera;
 	static XRController3D _leftController;
@@ -366,6 +369,9 @@ public static class VrController
 		_sceneTree = gameRoot.GetTree();
 		_gameViewport = gameRoot.GetNode<SubViewport>("../WorldViewContainer/SubViewport");
 		_gameViewport.OwnWorld3D = false;
+		_mirrorYawGimbal = gameRoot.GetNodeOrNull<Node3D>("../WorldViewContainer/SubViewport/GimbalYaw");
+		_mirrorRollGimbal = gameRoot.GetNodeOrNull<Node3D>("../WorldViewContainer/SubViewport/GimbalYaw/GimbalRoll");
+		_mirrorPitchGimbal = gameRoot.GetNodeOrNull<Node3D>("../WorldViewContainer/SubViewport/GimbalYaw/GimbalRoll/GimbalPitchCamera");
 
 		_worldSetupPending = true;
 		_worldSetupComplete = false;
@@ -507,14 +513,14 @@ public static class VrController
 
 	static void CreateXrRig(Node3D underworld)
 	{
-		if (main.cameraYawGimbal == null)
+		if (main.cameraYawGimbal_world == null)
 		{
 			GD.PushError("[VR] CreateXrRig: yaw gimbal missing.");
 			_worldSetupPending = false;
 			return;
 		}
 
-		VrDebugLog("CreateXrRig", $"GimbalYaw inTree={main.cameraYawGimbal.IsInsideTree()} path={main.cameraYawGimbal.GetPath()}");
+		VrDebugLog("CreateXrRig", $"GimbalYaw inTree={main.cameraYawGimbal_world.IsInsideTree()} path={main.cameraYawGimbal_world.GetPath()}");
 
 		_xrOrigin = new XROrigin3D { Name = "XROrigin" };
 		underworld.AddChild(_xrOrigin);
@@ -590,21 +596,22 @@ public static class VrController
 
 	static void SetupNativeWorldCamera()
 	{
-		if (main.cameraPitchGimbal != null)
+		if (main.cameraPitchGimbal_world != null)
 		{
-			main.cameraPitchGimbal.Current = false;
+			main.cameraPitchGimbal_world.Current = false;
 		}
 
 		_gameViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
-		main.instance.cam = _xrCamera;
+		main.instance.cam_world = _xrCamera;
+		main.cameraPitchGimbal_world = _xrCamera;
 		SyncXrOriginFromGimbal();
 	}
 
 	static void SetupMirrorScreen()
 	{
-		if (main.cameraPitchGimbal != null)
+		if (main.cameraPitchGimbal_world != null)
 		{
-			main.cameraPitchGimbal.Current = true;
+			main.cameraPitchGimbal_world.Current = true;
 		}
 
 		_gameViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
@@ -665,7 +672,7 @@ public static class VrController
 
 	public static void SyncXrOriginFromGimbal()
 	{
-		if (_xrOrigin == null || main.cameraYawGimbal == null || uwsettings.instance.vr_mirror)
+		if (_xrOrigin == null || main.cameraYawGimbal_world == null || uwsettings.instance.vr_mirror)
 		{
 			return;
 		}
@@ -693,12 +700,12 @@ public static class VrController
 	/// <summary>Mirror mode: XR origin carries body position/yaw; OpenXR rotates the XRCamera for head look.</summary>
 	static void SyncXrOriginBodyFromGame()
 	{
-		if (_xrOrigin == null || main.cameraYawGimbal == null)
+		if (_xrOrigin == null || main.cameraYawGimbal_world == null)
 		{
 			return;
 		}
 
-		_xrOrigin.GlobalPosition = main.cameraYawGimbal.GlobalPosition;
+		_xrOrigin.GlobalPosition = main.cameraYawGimbal_world.GlobalPosition;
 
 		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
 		_xrOrigin.Rotation = Vector3.Zero;
@@ -709,7 +716,7 @@ public static class VrController
 	/// <summary>Drive the flat SubViewport camera from the tracked XRCamera so the mirror shows head look.</summary>
 	public static void SyncMirrorHeadLook()
 	{
-		if (_xrCamera == null || main.cameraYawGimbal == null || main.cameraRollGimbal == null || main.cameraPitchGimbal == null)
+		if (_xrCamera == null || _mirrorYawGimbal == null || _mirrorRollGimbal == null || _mirrorPitchGimbal == null)
 		{
 			return;
 		}
@@ -718,15 +725,15 @@ public static class VrController
 		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
 		var headEuler = _xrCamera.Transform.Basis.GetEuler(EulerOrder.Yxz);
 
-		main.cameraYawGimbal.Rotation = Vector3.Zero;
-		main.cameraYawGimbal.Rotate(Vector3.Up, (float)Math.PI);
-		main.cameraYawGimbal.Rotate(Vector3.Up, bodyYaw + headEuler.Y);
+		_mirrorYawGimbal.Rotation = Vector3.Zero;
+		_mirrorYawGimbal.Rotate(Vector3.Up, (float)Math.PI);
+		_mirrorYawGimbal.Rotate(Vector3.Up, bodyYaw + headEuler.Y);
 
-		main.cameraRollGimbal.Rotation = Vector3.Zero;
-		main.cameraRollGimbal.Rotate(Vector3.Forward, -headEuler.Z);
+		_mirrorRollGimbal.Rotation = Vector3.Zero;
+		_mirrorRollGimbal.Rotate(Vector3.Forward, -headEuler.Z);
 
-		main.cameraPitchGimbal.Rotation = Vector3.Zero;
-		main.cameraPitchGimbal.Rotate(Vector3.Right, -headEuler.X);
+		_mirrorPitchGimbal.Rotation = Vector3.Zero;
+		_mirrorPitchGimbal.Rotate(Vector3.Right, -headEuler.X);
 
 		var visionYaw = GetHeadYawForVision();
 		UpdateVisionHeadingFromYaw(visionYaw);
@@ -864,7 +871,7 @@ public static class VrController
 			return;
 		}
 
-		var flatCam = main.cameraPitchGimbal;
+		var flatCam = main.cameraPitchGimbal_world;
 
 		GD.Print($"[VR debug] ========== VR SETUP ({phase}) ==========");
 		GD.Print($"[VR debug] vr_mirror={uwsettings.instance.vr_mirror} openXrEnabled={_openXrOutputEnabled}");
@@ -880,7 +887,7 @@ public static class VrController
 	static void LogVrRuntimeState()
 	{
 		var rootVp = _sceneTree?.Root?.GetViewport();
-		GD.Print($"[VR debug] frame={_debugFrameCounter} UseXR={rootVp?.UseXR} xrInTree={_xrCamera?.IsInsideTree()} flatCam={main.cameraPitchGimbal?.Current} xrCam={_xrCamera?.Current}");
+		GD.Print($"[VR debug] frame={_debugFrameCounter} UseXR={rootVp?.UseXR} xrInTree={_xrCamera?.IsInsideTree()} flatCam={main.cameraPitchGimbal_world?.Current} xrCam={_xrCamera?.Current}");
 	}
 
 	static void VrDebugLog(string phase, string message)

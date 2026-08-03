@@ -39,6 +39,15 @@ namespace Underworld
         /// </summary>
         public bool UseLowDetail = false;
 
+
+        public XferChannnelMode XFER = XferChannnelMode.AllColours;
+        public enum XferChannnelMode
+        {
+            AllColours = 0,
+            NonXFer = 1,
+            XFEROnly = 2
+        }
+
         /// <summary>
         /// Loads the image file into the buffer
         /// </summary>
@@ -95,7 +104,8 @@ namespace Underworld
             bool useAlphaChannel,
             bool useSingleRedChannel,
             bool crop = false,
-            bool OutputInLowDetail = false)
+            bool OutputInLowDetail = false,
+            ArtLoader.XferChannnelMode xfermode = ArtLoader.XferChannnelMode.AllColours)
         {
             Godot.Image.Format imgformat;
             if (useSingleRedChannel)
@@ -143,7 +153,14 @@ namespace Underworld
                     for (int j = iRow * width; j < (iRow * width) + width; j++)
                     {
                         byte pixel = (byte)getAt(databuffer, dataOffSet + j, 8);
-                        img.SetPixel(iCol, iRow, palette.ColorAtIndex(index: pixel, useAlphaChannel: useAlphaChannel, useSingleRedChannel: useSingleRedChannel));
+                        img.SetPixel(
+                            x: iCol, 
+                            y: iRow, 
+                            color: palette.ColorAtIndex(
+                                index: pixel, 
+                                useAlphaChannel: useAlphaChannel, 
+                                useSingleRedChannel: useSingleRedChannel,
+                                xfermode: xfermode));
                         iCol++;
                     }
                 }

@@ -96,7 +96,7 @@ namespace Underworld
 
         static door()
         {
-            tmDoor = new GRLoader(GRLoader.DOORS_GR, GRLoader.GRShaderMode.TextureShader, playerdat.DetailLevel > 0);
+            tmDoor = new GRLoader(GRLoader.DOORS_GR, GRLoader.GRShaderMode.TextureShader);
             tmDoor.UseRedChannel = true;
         }
 
@@ -219,7 +219,7 @@ namespace Underworld
             {
                 UWsoundeffects.PlaySoundEffectAtCoordinate(UWsoundeffects.SoundEffectDoor, (doorObj.tileX << 3) + doorObj.xpos, (doorObj.tileY << 3) + doorObj.ypos, 0);
             }
-            playerdat.UpdateAutomap();//trigger an update of visibility
+            //playerdat.UpdateAutomap();//trigger an update of visibility
             trigger.TriggerObjectLink(character: 1,
                     ObjectUsed: doorObj,
                     triggerType: (int)triggerObjectDat.OPEN_TRIGGER_TYPE,
@@ -941,11 +941,14 @@ namespace Underworld
                     case 1:
                         if (!isSecretDoor(this.uwobject))
                         {
-                            return tmDoor.GetMaterial(textureno);
+                            return tmDoor.GetMaterialForObject(textureno, uwobject);
                         }
                         else
                         {
-                            return tileMapRender.mapTexturesWalls.GetMaterial(textureno, UWTileMap.current_tilemap.texture_map);
+                            return tileMapRender.mapTexturesWalls.GetMaterialForObject(
+                                textureno: textureno, 
+                                texturemap: UWTileMap.current_tilemap.texture_map, 
+                                obj: uwobject);
                         }
                 }
             }
@@ -1236,7 +1239,10 @@ namespace Underworld
         {//Get the material texture from tmobj   
             if (surface != 6)
             {
-                return tileMapRender.mapTexturesWalls.GetMaterial(texture, UWTileMap.current_tilemap.texture_map);
+                return tileMapRender.mapTexturesWalls.GetMaterialForObject(
+                    textureno: texture, 
+                    texturemap: UWTileMap.current_tilemap.texture_map, 
+                    obj: uwobject);
             }
             else
             {

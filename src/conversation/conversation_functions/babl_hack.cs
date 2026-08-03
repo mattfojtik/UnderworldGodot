@@ -1,5 +1,6 @@
 
 using System.Diagnostics;
+using System.Runtime.Serialization.Formatters;
 
 namespace Underworld
 {
@@ -7,7 +8,7 @@ namespace Underworld
     {
         public static void babl_hack(uwObject talker)
         {
-            var mode = at(at(stackptr - 1));
+            var mode = at(at(stack + stackptr - 1));
             
             Debug.Print($"babl hack mode {mode}");
             switch (mode)
@@ -36,15 +37,46 @@ namespace Underworld
                     {
                         SetUpArenaFight();
                         break;
-                    }
-                case 3:
-                    {//gets and clears jospurs debt.
+                    }                    
+                case 3://gets and clears jospurs debt.
+                    {
                         result_register = playerdat.GetQuest(133);
                         playerdat.SetQuest(133,0);
                         break;
                     }
+                case 5:
+                    {
+                        Debug.Print("untested set bit on npcwhoami");
+                        var who = at(at(stack + stackptr - 2));
+                        CallBacks.RunCodeOnNPCS_WhoAmI(
+                            methodToCall: npc.set_unkABit7, 
+                            whoami: who, 
+                            paramsArray: new int[]{1}, 
+                            loopAll: false );
+                        break;
+                    }
+                case 4: //check if fighting in the pits
+                    {
+                        Debug.Print("untested checkifinpitsfight");
+                        if (playerdat.IsFightingInPit)
+                        {
+                            result_register = 1;
+                        }
+                        else
+                        {
+                            result_register = 0;
+                        }
+                        break;
+                    }
+                case 9: //trade bonus
+                    {
+                        Debug.Print("untested babltradebonus");
+                        BablTradeBonus = at(at(stack + stackptr - 2));
+                        break;
+                    }
                 default:                
                     Debug.Print($"unimplemented babl hack mode {mode}");
+                    result_register = 0;
                     break;
             }
         }
@@ -64,9 +96,9 @@ namespace Underworld
         /// </summary>
         static void SetUpArenaFight()
         {
-            var IsPowerFullprobability_var4 = GetConvoStackValueAtPtr(stackptr-4);
-            var Arena_var6 = GetConvoStackValueAtPtr(stackptr-3);
-            var di_noOfFighters =GetConvoStackValueAtPtr(stackptr-2);
+            var IsPowerFullprobability_var4 = GetConvoStackValueAtPtr(stack + stackptr-4);
+            var Arena_var6 = GetConvoStackValueAtPtr(stack + stackptr-3);
+            var di_noOfFighters =GetConvoStackValueAtPtr(stack + stackptr-2);
             var xOffset_var8 = 1;
             var yOffset_varA = 1;
             var var10 = 0;

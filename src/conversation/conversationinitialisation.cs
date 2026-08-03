@@ -8,9 +8,12 @@ namespace Underworld
 
         static Vector2 OriginalUW2ScrlEdgeLeft;
         static Vector2 OriginalUW2ScrlEdgeRight;
-        public static void StartConversation(uwObject talker)
+
+        static bool SpecialCaseDyingNPC = false;
+        public static void StartConversation(uwObject talker, bool dyingNPC = false)
         {
             currentTalker=talker;
+            SpecialCaseDyingNPC = dyingNPC;
             //talker.npc_whoami = 46; jerry the rat
             //Try and load the conversation from the ark files.
             if (!cnvArkLoader.Loaded)
@@ -64,6 +67,7 @@ namespace Underworld
                     }
 
                     InitialiseConversationMemory();
+                    stack = currentConversation.NoOfMemorySlots;
 
                     ImportVariables(talker);
 
@@ -152,11 +156,7 @@ namespace Underworld
             {
                 uimanager.SetPanelMode(0);//make sure inventory paperdoll is displayed
             }
-
-            //turn off mouselook to allow clicking around the screen.
-            Input.MouseMode = Input.MouseModeEnum.Hidden;
-            main.cameraPitchGimbal.Set("MOUSELOOK", false);
-            
+          
 
             //npc name and portrait
             uimanager.instance.NPCNameLabel.Text = $"[color={uimanager.CharNameColour}]{talker.a_name}[/color]";
@@ -165,6 +165,7 @@ namespace Underworld
             //Init conversation trade globals
             //Rng.r = new System.Random(talker.item_id);//rng is always set to npcs item id
             Rng.Seed = (uint)talker.item_id;
+            BablTradeBonus = 0;
             TradeThreshold = Rng.RandomOffset(critterObjectDat.TradeThreshold(talker.item_id), -25, +25);
             TradePatience = Rng.RandomOffset(critterObjectDat.TradePatience(talker.item_id), -20, +100); 
             NPCAppraisalAccuracy = Rng.RandomOffset( (16 - critterObjectDat.TradeAppraisal(talker.item_id)) * 6 , -25,+50); 

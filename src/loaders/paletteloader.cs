@@ -139,7 +139,6 @@ namespace Underworld
             }
             uwsettings.instance.shaderbandsize = band;
 
-            //Init palette shader params
             RenderingServer.GlobalShaderParameterAdd(
                 name: "uipalette",
                 type: RenderingServer.GlobalShaderParameterType.Sampler2D,
@@ -149,6 +148,10 @@ namespace Underworld
                 type: RenderingServer.GlobalShaderParameterType.Float,
                 defaultValue: shade.GetViewingDistance(playerdat.lightlevel));
             RenderingServer.GlobalShaderParameterAdd(
+                name: "simpleshade",
+                type: RenderingServer.GlobalShaderParameterType.Sampler2D,
+                defaultValue: (Texture)shade.shadesdata[playerdat.lightlevel].simpleshade);
+            RenderingServer.GlobalShaderParameterAdd(
                 name: "smoothpalette",
                 type: RenderingServer.GlobalShaderParameterType.Sampler2D,
                 defaultValue: (Texture)Palettes[Palette.CurrentPalette].cycledGamePalette[Palette.ColourTone, 0, 0]);
@@ -156,6 +159,29 @@ namespace Underworld
                 name: "xfer",
                 type: RenderingServer.GlobalShaderParameterType.Sampler2D,
                 defaultValue: (Texture)XferLoader.GetXFERImageData());
+
+            RenderingServer.GlobalShaderParameterAdd(
+                name: "renderceilings", 
+                type: RenderingServer.GlobalShaderParameterType.Bool, 
+                defaultValue: true);
+            RenderingServer.GlobalShaderParameterAdd(
+                name: "renderwalls", 
+                type: RenderingServer.GlobalShaderParameterType.Bool, 
+                defaultValue: true);
+            RenderingServer.GlobalShaderParameterAdd(
+                name: "renderfloors",
+                type: RenderingServer.GlobalShaderParameterType.Bool, 
+                defaultValue: true);
+
+            // RenderingServer.GlobalShaderParameterAdd(
+            //     name: "viewport_1",
+            //     type: RenderingServer.GlobalShaderParameterType.Sampler2D,
+            //     defaultValue: (Texture)uimanager.instance.uwsubviewport_world.GetTexture());
+            
+            // RenderingServer.GlobalShaderParameterAdd(
+            //     name: "viewport_2",
+            //     type: RenderingServer.GlobalShaderParameterType.Sampler2D,
+            //     defaultValue:  (Texture)uimanager.instance.uwsubviewport_sprites.GetTexture());
         }
 
         public static int[] LoadAuxilaryPalIndices(string auxPalPath, int auxPalIndex)
@@ -355,11 +381,11 @@ namespace Underworld
             NextPaletteCycle_UI++;
 
             //Cycle the palette		
-            UpdateShaderParams();
+            UpdateShaderCycleParams();
 
         }
 
-        public static void UpdateShaderParams()
+        public static void UpdateShaderCycleParams()
         {
             if (NextPaletteCycle_GAME != -1)
             {

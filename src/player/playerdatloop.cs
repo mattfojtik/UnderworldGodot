@@ -29,7 +29,7 @@ namespace Underworld
         public static int NoOfTilesDiscovered = 0;
         public static void PlayerTimedLoop(double delta)
         {
-            if ((!uimanager.blockmouseinput) && (uimanager.InGame))
+            if ((!uimanager.blockinput) && (uimanager.InGame))
             {
                 playertimer += delta;
 
@@ -139,12 +139,12 @@ namespace Underworld
                             if (ManaRegenEnchantment)
                             {
                                 //play_mana = Math.Min(play_mana + 1, max_mana);
-                                ManaRegenChange(1);
+                                ManaRegenChange(-1);
                             }
                             if (HealthRegenEnchantment)
                             {
                                 //play_hp = Math.Min(play_hp + 1, max_hp);
-                                HPRegenerationChange(1);
+                                HPRegenerationChange(-1);
                             }
 
                             if (playerdat.SwimCounter > 0x50)
@@ -197,18 +197,22 @@ namespace Underworld
                             if ((playerUpdateCounter % 3) == 0)
                             {//every 60 seconds
                                 if (play_poison > 0)
-                                {
-                                    Debug.Print("TODO apply poison damage");
-                                    var dam = play_poison >> 1;
-                                    play_poison = (byte)Math.Max(play_poison - 1, 0);
-                                    play_hp = Math.Max(play_hp - dam, 0);
+                                {  
+                                    //apply poison damage and reduce by 1;
+                                    damage.DamageObject(
+                                        objToDamage: playerdat.playerObject, 
+                                        basedamage: play_poison--, 
+                                        damagetype: 0x10, 
+                                        objList: UWTileMap.current_tilemap.LevelObjects, 
+                                        WorldObject: true, 
+                                        damagesource: 0);
                                 }
 
                                 var manaskillcheck = (int)SkillCheck(ManaSkill, 10);
                                 if (manaskillcheck > 0)
                                 {
                                     //play_mana = Math.Min(play_mana + manaskillcheck, max_mana);
-                                    ManaRegenChange(play_mana + manaskillcheck);
+                                    ManaRegenChange(-manaskillcheck);
                                 }
                             }//end every 60 seconds update
                             if ((playerUpdateCounter % 30) == 0)
@@ -298,15 +302,13 @@ namespace Underworld
                     }
                 }
             }
-            //TODO: see about similar logic for UW1 tybals lair
-
-            //Apply mana boost
+            
             if (regeneration < 0)
-            {//boost mana by minus minus minor class. Not clear when this could happen...
+            {//boost mana by a fixed amount, mana regen on a schedule.
                 play_mana = Math.Min(play_mana - regeneration, max_mana);
             }
             else
-            {
+            {//Apply mana boost from a spell/
                 var increase = 1 + ((max_mana * (regeneration + Rng.r.Next(0, 4))) >> 4); //This formula may be wrong and is restoring too much mana.
                 play_mana = Math.Min(play_mana + increase, max_mana);
             }
@@ -470,10 +472,10 @@ namespace Underworld
                     }
                 }
             }
-            if (automap.CanMap(dungeon_level) && (AutomapEnabled))
-            {
-                UpdateAutomap();//update the visited status of nearby tiles
-            }
+            // if (automap.CanMap(dungeon_level) && (AutomapEnabled))
+            // {
+            //     UpdateAutomap();//update the visited status of nearby tiles
+            // }
 
             motion.RefreshPlayerTileState();
 
@@ -737,11 +739,7 @@ namespace Underworld
                 ? VrController.VrViewDistance
                 : shade.GetViewingDistance(lightlevel);
             RenderingServer.GlobalShaderParameterSet("cutoffdistance", cutoff);
-            if (previousLightLevel != lightlevel)
-            {
-                UpdateAutomap();//refresh automap visibility
-            }
-            // Godot.RenderingServer.GlobalShaderParameterSet("shades", shade.shadesdata[playerdat.lightlevel].GetImage());
+            RenderingServer.GlobalShaderParameterSet("simpleshade", (Texture)shade.shadesdata[playerdat.lightlevel].simpleshade);
         }
 
         /// <summary>
@@ -801,38 +799,38 @@ namespace Underworld
         /// <summary>
         /// Updates a range of tiles in the automap around the player
         /// </summary>
-        public static void UpdateAutomap()
-        {
-            return;
-            //depending on light level. need to confirm if below math is okay
-            NoOfTilesDiscovered = 0;
-            var range = 1 + (lightlevel / 2);
-            automap.MarkRangeOfTilesVisited(
-                range: range,
-                cX: playerObject.tileX,
-                cY: playerObject.tileY,
-                dungeon_level: dungeon_level
-                );
+        // public static void UpdateAutomap()
+        // {
+        //     return;
+        //     //depending on light level. need to confirm if below math is okay
+        //     NoOfTilesDiscovered = 0;
+        //     var range = 1 + (lightlevel / 2);
+        //     automap.MarkRangeOfTilesVisited(
+        //         range: range,
+        //         cX: playerObject.tileX,
+        //         cY: playerObject.tileY,
+        //         dungeon_level: dungeon_level
+        //         );
 
-            //This should cause an exp gain but the effect is limited because the automap is currently not doing the same map revealing as vanilla.
-            if (NoOfTilesDiscovered > 0)
-            {
-                int gain = 0;
-                if (_RES == GAME_UW2)
-                {
-                    var world = 1 + (dungeon_level / 8);
-                    gain = (NoOfTilesDiscovered * world) / 0xA;
-                }
-                else
-                {
-                    gain = (NoOfTilesDiscovered * dungeon_level) / 0xA;
-                }
-                if (gain != 0)
-                {
-                    ChangeExperience(gain);
-                }
-            }
-        }
+        //     //This should cause an exp gain but the effect is limited because the automap is currently not doing the same map revealing as vanilla.
+        //     if (NoOfTilesDiscovered > 0)
+        //     {
+        //         int gain = 0;
+        //         if (_RES == GAME_UW2)
+        //         {
+        //             var world = 1 + (dungeon_level / 8);
+        //             gain = (NoOfTilesDiscovered * world) / 0xA;
+        //         }
+        //         else
+        //         {
+        //             gain = (NoOfTilesDiscovered * dungeon_level) / 0xA;
+        //         }
+        //         if (gain != 0)
+        //         {
+        //             ChangeExperience(gain);
+        //         }
+        //     }
+        // }
 
         /// <summary>
         /// Changes the colour of the maze tiles in Tybals Lair in UW1 when the maze navigation crown is work

@@ -552,6 +552,11 @@ namespace Underworld
                     tmp |= (value & 0x3) << 4;
                     SetAt(0xB6, (byte)tmp);
                 }
+
+                //Update rendering
+                Godot.RenderingServer.GlobalShaderParameterSet("renderceilings", playerdat.RenderCeilings);
+                Godot.RenderingServer.GlobalShaderParameterSet("renderwalls", playerdat.RenderWalls);
+                Godot.RenderingServer.GlobalShaderParameterSet("renderfloors", playerdat.RenderFloors);
             }
         }
 
@@ -695,7 +700,7 @@ namespace Underworld
                         }
                     }
 
-                    UpdateAttributes(false);
+                    UpdateHPManaMax(false);
                     uimanager.RefreshStatsDisplay();
                     //Check if player can level up
                     // if (play_level < 0x10)
@@ -770,7 +775,7 @@ namespace Underworld
         public static void RecalculateHPManaMaxWeight(bool RestoreMana)
         {
             max_hp = 0x1E + ((STR * play_level) / 5);
-            max_mana = ((ManaSkill + 1) * INT) >> 3;
+            max_mana = ((ManaSkill + 1) * INT) >> 3; //TODO: This needs to account for tybals Orb.
             if (RestoreMana)
             {
                 play_mana = max_mana;

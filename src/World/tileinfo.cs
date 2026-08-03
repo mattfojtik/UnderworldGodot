@@ -467,41 +467,37 @@ namespace Underworld
             }
         }
 
-        public static string GetTileSurfaceDescription(Vector3 normal, int tileX, int tileY)
+        public static string GetTileSurfaceDescription(int face, int tileX, int tileY)
         {
-            var t = UWTileMap.current_tilemap.Tiles[tileX, tileY];
-            if (t == null)
+            var tile = UWTileMap.current_tilemap.Tiles[tileX, tileY];
+            if (tile == null)
             {
                 return "";
             }
             //look at tile
             //uimanager.AddToMessageScroll($"{tileX},{tileY}");
             //parse the normal into a tile surface.
-            if (normal.Y > 0)
+            switch (face)
             {
-                //this is a floor
-                return t.DescriptionFloor;
+                case tileMapRender.fSELF:
+                    return tile.DescriptionWall;
+                case tileMapRender.fCEIL:
+                    return GameStrings.GetString(10, 511);
+                case tileMapRender.fNORTH:
+                    return tile.DescriptionNorth;
+                case tileMapRender.fSOUTH:
+                    return tile.DescriptionSouth;
+                case tileMapRender.fEAST:
+                    return tile.DescriptionEast;
+                case tileMapRender.fWEST:
+                    return tile.DescriptionWest;
+                case tileMapRender.fFLOOR:
+                    return tile.DescriptionFloor;
+                case tileMapRender.fBOTTOM:
+                    Debug.Print("BOTTOM!");
+                    break;
             }
-            else
-            {
-                if (normal == Vector3.Forward)
-                {
-                    return t.DescriptionSouth;
-                }
-                if (normal == Vector3.Back)
-                {
-                    return t.DescriptionNorth;
-                }
-                if (normal == Vector3.Left)
-                {
-                    return t.DescriptionEast;
-                }
-                if (normal == Vector3.Right)
-                {
-                    return t.DescriptionWest;
-                }
-            }
-            return t.DescriptionWall; //default self wall
+            return tile.DescriptionWall; //default self wall
         }
 
         /// <summary>
@@ -563,12 +559,32 @@ namespace Underworld
                         {
                             tileToChange.floorHeight = 0xF;
                         }
-
-                        if ((newFloorTexture < 0xF) && (_RES == GAME_UW2) || ((newFloorTexture < 0xB) && (_RES != GAME_UW2)))
+                        bool NewTileIsSolid = false;
+                        if ((newFloorTexture < 0xF) && (_RES == GAME_UW2))
                         {
                             tileToChange.floorTexture = (short)newFloorTexture;
-                            //TODO some terrain changes happen here too.
+                            var terrain67 = TerrainDatLoader.GetTerrainDataBit67_unshifted(tileToChange) >> 6;
+                            if (terrain67 == 2)
+                            {
+                                NewTileIsSolid = (Rng.r.Next(0x7FFF) & 0x1) == 1;
+                            }
+                            else
+                            {
+                                if (terrain67 == 1)
+                                {
+                                    NewTileIsSolid = true; //this only occurs in uw2. Likely removes the object when in a water tile or a lava tile (50:50)
+                                }
+                            }
                         }
+                        if ((newFloorTexture < 0xB) && (_RES != GAME_UW2))
+                        {
+                            tileToChange.floorTexture = (short)newFloorTexture;
+                        }
+                        // if ((newFloorTexture < 0xF) && (_RES == GAME_UW2) || ((newFloorTexture < 0xB) && (_RES != GAME_UW2)))
+                        // {
+                        //     tileToChange.floorTexture = (short)newFloorTexture;
+                        //     //TODO some terrain changes happen here too.
+                        // }
 
                         //wall textures
                         if (newWallTexture < 0x3F)
@@ -577,7 +593,7 @@ namespace Underworld
                             //Update NSEW of neighbours
                         }
 
-                        bool NewTileIsSolid = false;
+
                         if (newType < 0xA)
                         {
                             tileToChange.tileType = (short)newType;
@@ -615,7 +631,7 @@ namespace Underworld
                                             }
                                             else
                                             {
-                                                next = (short)LowerObjectInChangingTile(obj: obj, InitialTileHeight: initialheight,  NewTileHeight: newHeight, TileIsSolid: NewTileIsSolid, HeightAdjustFlag: HeightAdjustFlag);                                                
+                                                next = (short)LowerObjectInChangingTile(obj: obj, InitialTileHeight: initialheight, NewTileHeight: newHeight, TileIsSolid: NewTileIsSolid, HeightAdjustFlag: HeightAdjustFlag);
                                             }
                                         }
                                         else
@@ -812,7 +828,7 @@ namespace Underworld
             {
                 //object is located below new tileheight.
                 obj.zpos = (short)(NewTileHeight << 3);
-                
+
                 if ((obj.IsStatic) || (obj.majorclass == 1))  //static or npc
                 {
                     if (obj == playerdat.playerObject)

@@ -1,6 +1,7 @@
 using Godot;
 using Peaky.Coroutines;
 using System.Collections;
+using System.Runtime.Serialization;
 
 namespace Underworld
 {
@@ -16,11 +17,11 @@ namespace Underworld
             {
                 if (UWClass._RES == UWClass.GAME_UW2)
                 {
-                    return PaletteLoader.ToBBCode(0,0x76);
+                    return PaletteLoader.ToBBCode(0, 0x76);
                 }
                 else
                 {
-                    return PaletteLoader.ToBBCode(0,0x2e);
+                    return PaletteLoader.ToBBCode(0, 0x2e);
                 }
             }
         }
@@ -41,6 +42,7 @@ namespace Underworld
         public static bool WaitingForTypedInput = false;
 
         public static bool WaitingForYesOrNo = false;
+        public static string YesNoOption = "Yes";
 
         public RichTextLabel[] OutputControl;
 
@@ -75,7 +77,7 @@ namespace Underworld
                 case ConversationVM.PC_SAY:
                     newText = $"[color=#883E14]{newText}[/color]";
                     break;
-                case ConversationVM.PRINT_SAY:                    
+                case ConversationVM.PRINT_SAY:
                     newText = $"[color=black]{newText}[/color]";
                     break;
                 case ConversationVM.UI_SAY:
@@ -160,7 +162,19 @@ namespace Underworld
                 output += Lines[i].LineText;
             }
             //Replace special characters
-            output = output.Replace("{TYPEDINPUT}", uimanager.instance.TypedInput.Text);
+            if (MessageDisplay.WaitingForYesOrNo)
+            {
+                uimanager.instance.TypedInput.Text = MessageDisplay.YesNoOption;
+                output = output.Replace("{TYPEDINPUT}", MessageDisplay.YesNoOption);
+            }
+            else
+            {
+                if (MessageDisplay.WaitingForTypedInput)
+                {
+                    output = output.Replace("{TYPEDINPUT}", uimanager.instance.TypedInput.Text);
+                }
+            }
+
             OutputControl[0].Text = output;
         }
 
@@ -229,7 +243,7 @@ namespace Underworld
         {
             yield return new WaitForSeconds(waittime);
             //restore
-            for (int i = 0; i<=Lines.GetUpperBound(0);i++)
+            for (int i = 0; i <= Lines.GetUpperBound(0); i++)
             {
                 Lines[i] = new MessageScrollLine(linesToRestore[i].OptionNo, linesToRestore[i].LineText);
             }

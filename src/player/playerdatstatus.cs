@@ -321,7 +321,7 @@ namespace Underworld
                get
                {
                     switch (_RES)
-                    {//TODO double check this is right
+                    {
                          case GAME_UW2:
                               return (byte)((GetAt(0x61) >> 1) & 0xf);
                          default:
@@ -331,7 +331,7 @@ namespace Underworld
                set
                {
                     switch (_RES)
-                    {//TODO double check this is right
+                    {
                          case GAME_UW2:
                               {
                                    var tmp = (byte)(GetAt(0x61) & 0xE1);
@@ -688,5 +688,39 @@ namespace Underworld
                     return false;
                }
           }
-     }//enclass
+
+          public static short PickupDistance
+          {
+               get
+               {
+                    if (TelekenesisEnchantment)
+                    {
+                         return 0; //?
+                    }
+                    else
+                    {
+                         return 0x90;
+                    }
+               }
+          }
+
+          public static short UseDistance
+          {
+               get
+               {
+                    if (usingpole)
+                    {
+                         return 0x190;
+                    }
+                    else
+                    {
+                         if (TelekenesisEnchantment)
+                         {
+                              return 0; //?
+                         }
+                    }
+                    return 0x90;
+               }
+          }
+     }//end class
 }//end namespace

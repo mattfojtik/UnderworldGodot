@@ -1,25 +1,33 @@
-using System.Diagnostics;
 using Godot;
 
 namespace Underworld
 {
     public class tmap:model3D
     {
-        int texture;
+        //int texture;
         Node3D tmapnode;
         float tmapOffset;
 
         float ExtrudeOffset => tmapOffset * tileMapRender.WorldScaleFactor;
 
-        static float WallStandoffUnscaled()
+        static float WallStandoffUnscaled(uwObject obj)
         {
+            if (UWTileMap.ValidTile(obj.tileX, obj.tileY))
+            {
+                var tile = UWTileMap.current_tilemap.Tiles[obj.tileX, obj.tileY];
+                var door = objectsearch.FindMatchInObjectChain(tile.indexObjectList, 5, 0, -1, UWTileMap.current_tilemap.LevelObjects);
+                if (door != null && door.xpos == obj.xpos && door.ypos == obj.ypos)
+                {
+                    return 0.1f;
+                }
+            }
             return tileMapRender.WallFaceStandoffWorld / tileMapRender.WorldScaleFactor;
         }
 
         public tmap(uwObject _uwobject)
         {
             uwobject = _uwobject;
-            tmapOffset = WallStandoffUnscaled();
+            tmapOffset = WallStandoffUnscaled(_uwobject);
         }
 
         Vector3[] FaceSampleLocals()
@@ -38,7 +46,7 @@ namespace Underworld
 
         public void ApplyWallPlacement(Node3D parent)
         {
-            tmapOffset = WallStandoffUnscaled();
+            tmapOffset = WallStandoffUnscaled(uwobject);
             PlaceWallMountedDepth(parent, uwobject, FaceSampleLocals(), tileMapRender.WallFaceStandoffTexels);
         }
 
@@ -46,22 +54,7 @@ namespace Underworld
         {
             var t = new tmap(obj);
 
-            //check if tmap shares space with a door, this deals with a tmap that is over a door in level 4 of UW1
-            if (UWTileMap.ValidTile(obj.tileX, obj.tileY))
-            {
-                var tile = UWTileMap.current_tilemap.Tiles[obj.tileX, obj.tileY];
-
-                var door = objectsearch.FindMatchInObjectChain(tile.indexObjectList, 5, 0, -1, UWTileMap.current_tilemap.LevelObjects);
-                if (door!=null)
-                {
-                    if ((door.xpos == obj.xpos) && (door.ypos == obj.ypos))
-                    {
-                        Debug.Print($"Tmap {obj.index} shares space with door {door.index}");
-                    }
-                }
-            }
-            
-            t.texture = obj.owner; //a_tilemap.texture_map[obj.owner];    
+            //t.texture = obj.owner; //a_tilemap.texture_map[obj.owner];    
             t.tmapnode = t.Generate3DModel(parent, name);
            
             SetModelRotation(parent,t);
@@ -122,7 +115,10 @@ namespace Underworld
         {//Get the material texture from tmobj   
             if (surface != 6)
             {
-                return tileMapRender.mapTexturesWalls.GetMaterial(texture, UWTileMap.current_tilemap.texture_map);
+                return tileMapRender.mapTexturesWalls.GetMaterialForObject(
+                    textureno: uwobject.owner, 
+                    texturemap: UWTileMap.current_tilemap.texture_map, 
+                    obj: uwobject);
             }
             else
             {

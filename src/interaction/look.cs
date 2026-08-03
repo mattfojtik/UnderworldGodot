@@ -1,3 +1,4 @@
+using Peaky.Coroutines;
 namespace Underworld
 {
     /// <summary>
@@ -76,16 +77,27 @@ namespace Underworld
                         }
                 }
 
-                //TODO: Add checking for traps here and prompting for disarming. May require turning this function into a co-routine.
-
-                trigger.TriggerObjectLink(
-                    character: 1,
-                    ObjectUsed: obj,
-                    triggerType: (int)triggerObjectDat.triggertypes.LOOK,
-                    triggerX: obj.tileX,
-                    triggerY: obj.tileY,
-                    objList: UWTileMap.current_tilemap.LevelObjects);
-
+                //Checking for traps here and prompting for disarming.
+                if (trapdisarming.DetectTrapTrigger(index, objList, playerdat.Search)> 0)
+                {
+                    //you've found a trap.                    
+                    _ = Coroutine.Run(
+                        trapdisarming.DisarmAttemptQuestion(index, objList),
+                        main.instance
+                        );
+                    uimanager.NextOutputPrependedString = "";
+                    return false;
+                }
+                else
+                {
+                    trigger.TriggerObjectLink(
+                        character: 1,
+                        ObjectUsed: obj,
+                        triggerType: (int)triggerObjectDat.triggertypes.LOOK,
+                        triggerX: obj.tileX,
+                        triggerY: obj.tileY,
+                        objList: UWTileMap.current_tilemap.LevelObjects);
+                }
                 uimanager.NextOutputPrependedString = "";//turn off any "writing reads" messages
 
                 // if ((obj.is_quant == 0) && (obj.link != 0))
@@ -124,10 +136,15 @@ namespace Underworld
         {
             switch (obj.minorclass)
             {
-                case 0: //keys up to 0xE
+                case 0: 
                     {
-                        if (obj.classindex <= 0xE)
-                        {//TODO LOCKPICK is in the middle of all these
+                        //keys 2 up to 0xE, and also 0 in UW1
+                        if (
+                        ((_RES != GAME_UW2) && (obj.classindex == 0))
+                        ||
+                        ((obj.classindex >= 2) && (obj.classindex <= 0xE))
+                        )
+                        {
                             return doorkey.LookAt(obj, WorldObject);
                         }
                         break;
@@ -350,14 +367,14 @@ namespace Underworld
             {//a container
                 //Try and check if the container directly contains a spell.
                 var linkedspell = objectsearch.FindMatchInObjectChain(
-                    ListHeadIndex: obj.link, 
-                    majorclass: 4, minorclass: 2, classindex: 0, 
-                    objList: objList, 
-                    SkipNext: false, 
-                    SkipLinks: true );
+                    ListHeadIndex: obj.link,
+                    majorclass: 4, minorclass: 2, classindex: 0,
+                    objList: objList,
+                    SkipNext: false,
+                    SkipLinks: true);
 
                 if (linkedspell != null)
-                {                   
+                {
                     if (linkedspell.item_id == 288)//container is linked directly to a spell.
                     {
                         BuildEnchantmentStrings(obj, objList, lorecheckresult, ref enchantmenttext, ref magical, ref cursed);

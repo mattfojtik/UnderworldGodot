@@ -125,8 +125,9 @@ namespace Underworld
         /// <returns></returns>
         public static bool Use(uwObject obj)
         {//node.Set("variable_name", value);
-            MessageDisplay.WaitingForTypedInput = true;
+            MessageDisplay.WaitingForTypedInput = true;            
             uimanager.instance.TypedInput.Text = "";
+            uimanager.instance.TypedInput.CaretColumn =uimanager.instance.TypedInput.Text.Length;
             uimanager.instance.scroll.Clear();
             uimanager.AddToMessageScroll("Chant the mantra {TYPEDINPUT}|");
             //Add a waiting co-routine to finish this interaction
@@ -169,7 +170,7 @@ namespace Underworld
                     if (playerdat.SkillPoints > 0)
                     {                        
                         AdvanceGreatly(mantra);
-                        playerdat.UpdateAttributes(true);
+                        playerdat.UpdateHPManaMax(true);
                     }
                     else
                     {
@@ -269,7 +270,7 @@ namespace Underworld
                             }
                             playerdat.SkillPoints--; //decrement points
                             uimanager.AddToMessageScroll(msg);
-                            playerdat.UpdateAttributes(true);
+                            playerdat.UpdateHPManaMax(true);
                         }
                         else
                         {
