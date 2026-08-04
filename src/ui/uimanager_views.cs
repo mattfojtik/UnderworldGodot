@@ -167,6 +167,11 @@ namespace Underworld
 		/// <returns></returns>
 		public static bool IsMouseInViewPort()
         {
+            if (VrController.IsActive && (VrController.IsHud3DViewportHovering || VrController.IsVrWorldPointerActive))
+            {
+                return true;
+            }
+
             var viewportmouspos = instance.uwviewport.GetLocalMousePosition();
             if (
                 (viewportmouspos.X >= 0) && (viewportmouspos.Y >= 0)
@@ -182,32 +187,108 @@ namespace Underworld
             }
         }
 
-
-        public static void ClickOnViewPort(InputEventMouseButton eventMouseButton)
+        /// <summary>Map UW 3D viewport local coords to the values combat/click code expects.</summary>
+        public static void SetViewPortMouseFromUwLocal(Vector2 uwLocal)
         {
-            if (!InGame) { return; }
-            //store these values for use in throw and spell casting events
-            ViewPortMouseXPos = eventMouseButton.Position.X;
-            ViewPortMouseYPos = eventMouseButton.Position.Y;
-            if (uimanager.InteractionMode == InteractionModes.ModeAttack)
+            var vp = instance.uwviewport;
+            var xNorm = uwLocal.X / Mathf.Max(1f, vp.Size.X);
+            var yNorm = uwLocal.Y / Mathf.Max(1f, vp.Size.Y);
+            ViewPortMouseXPos = (xNorm * Window3DMaxX + Window3DLeftBorder) * 4f;
+            var y1 = (1f - yNorm) * Window3DMaxY;
+            ViewPortMouseYPos = (146f - y1) * 4f;
+        }
+
+        public static Vector2 UwLocalToObjectInfoPixel(Vector2 uwLocal)
+        {
+            var vp = instance.uwviewport;
+            var uwSize = instance.uwsubviewport_objectinfo.Size;
+            return new Vector2(
+                uwLocal.X / Mathf.Max(1f, vp.Size.X) * uwSize.X,
+                uwLocal.Y / Mathf.Max(1f, vp.Size.Y) * uwSize.Y);
+        }
+
+        public static void SetViewPortMouseFromObjectInfoPixel(Vector2 texPixel)
+        {
+            var vp = instance.uwviewport;
+            var uwSize = instance.uwsubviewport_objectinfo.Size;
+            var uwLocal = new Vector2(
+                texPixel.X / Mathf.Max(1f, uwSize.X) * vp.Size.X,
+                texPixel.Y / Mathf.Max(1f, uwSize.Y) * vp.Size.Y);
+            SetViewPortMouseFromUwLocal(uwLocal);
+        }
+
+        public static void TriggerViewPortClick(Vector2 uwLocal, bool leftClick)
+        {
+            if (InteractionMode == InteractionModes.ModeAttack)
             {
-                return;//no more needs to be done.
+                return;
             }
 
-            bool LeftClick = (eventMouseButton.ButtonIndex == MouseButton.Left);
-            //Debug.Print($"{eventMouseButton.Position.X},{eventMouseButton.Position.Y}");
-            //Dictionary result = DoRayCast(eventMouseButton.Position, RayDistance, out Vector3 rayOrigin);
-            var text = (Texture2D)uimanager.instance.uwsubviewport_objectinfo.GetTexture();
-            //text.GetImage().SavePng("c:\\temp\\testobjectinfo.png");
-            //var vi = new Vector2I((int)(ViewPortMouseXPos / text.GetWidth()), (int)(ViewPortMouseYPos / text.GetHeight()));
-            var mouse = uimanager.instance.uwviewport.GetLocalMousePosition();
-            var pixel = text.GetImage().GetPixel((int)mouse.X, (int)mouse.Y);//
+            SetViewPortMouseFromUwLocal(uwLocal);
+            ProcessObjectInfoPixel(UwLocalToObjectInfoPixel(uwLocal), leftClick);
+        }
 
+        public static bool TryGetObjectIndexAtObjectInfoPixel(Vector2 texPixel, out int objectIndex)
+        {
+            objectIndex = 0;
+            var text = (Texture2D)instance.uwsubviewport_objectinfo.GetTexture();
+            if (text == null)
+            {
+                return false;
+            }
 
-            //do projectiles first.
+            return TryGetObjectIndexFromImage(text.GetImage(), texPixel, out objectIndex);
+        }
+
+        public static bool TryGetObjectIndexFromImage(Image img, Vector2 texPixel, out int objectIndex)
+        {
+            objectIndex = 0;
+            if (img == null)
+            {
+                return false;
+            }
+
+            var x = (int)Mathf.Clamp(texPixel.X, 0, img.GetWidth() - 1);
+            var y = (int)Mathf.Clamp(texPixel.Y, 0, img.GetHeight() - 1);
+            var pixel = img.GetPixel(x, y);
+            if (pixel.R8 != 0)
+            {
+                return false;
+            }
+
+            objectIndex = (pixel.B8 << 8) | pixel.G8;
+            return objectIndex > 0 && objectIndex <= 1024;
+        }
+
+        public static void ProcessObjectInfoPixel(Vector2 texPixel, bool leftClick)
+        {
+            if (!InGame)
+            {
+                return;
+            }
+
+            var text = (Texture2D)instance.uwsubviewport_objectinfo.GetTexture();
+            if (text == null)
+            {
+                return;
+            }
+
+            ProcessObjectInfoPixelFromImage(text.GetImage(), texPixel, leftClick);
+        }
+
+        public static void ProcessObjectInfoPixelFromImage(Image img, Vector2 texPixel, bool leftClick)
+        {
+            if (!InGame || img == null)
+            {
+                return;
+            }
+
+            var x = (int)Mathf.Clamp(texPixel.X, 0, img.GetWidth() - 1);
+            var y = (int)Mathf.Clamp(texPixel.Y, 0, img.GetHeight() - 1);
+            var pixel = img.GetPixel(x, y);
+
             if (SpellCasting.currentSpell != null)
             {
-                //try can cast the current spell if class 5
                 if (SpellCasting.currentSpell.SpellMajorClass == 5)
                 {
                     SpellCasting.CastMagicProjectile(playerdat.playerObject, SpellCasting.currentSpell.SpellMinorClass);
@@ -215,17 +296,15 @@ namespace Underworld
                 }
             }
 
-            //then try and drop/throw
             if (playerdat.ObjectInHand != -1)
             {
-                //something is held. try and drop or throw it
                 var objToThrow = UWTileMap.current_tilemap.LevelObjects[playerdat.ObjectInHand];
                 var itemid = objToThrow.item_id;
                 if (pickup.DropObjectByPlayer(objToThrow, true))
                 {
                     playerdat.ObjectInHand = -1;
                     instance.mousecursor.SetCursorToCursor();
-                    pickup.DropSpecialCases(itemid);//primarily handle moonstones                    
+                    pickup.DropSpecialCases(itemid);
                 }
                 return;
             }
@@ -234,21 +313,20 @@ namespace Underworld
             {
                 var pitemindex = (pixel.B8 << 8) | pixel.G8;
                 if ((pitemindex > 0) && (pitemindex <= 1024))
-                {                    
-                    //clicked on a game object
+                {
                     var obj = UWTileMap.current_tilemap.LevelObjects[pitemindex];
-                    var itemname = GameStrings.GetSimpleObjectNameUW(UWTileMap.current_tilemap.LevelObjects[pitemindex].item_id);
+                    var itemname = GameStrings.GetSimpleObjectNameUW(obj.item_id);
                     Debug.Print($"{pixel} , {pitemindex}, {itemname} Object position is x:{obj.xpos}, y:{obj.ypos}, z:{obj.zpos}, h:{obj.heading}");
                     if (SpellCasting.currentSpell == null)
                     {
-                        InteractWithObjectCollider(index: obj.index, LeftClick: LeftClick);
+                        InteractWithObjectCollider(index: obj.index, LeftClick: leftClick);
                     }
                     else
                     {
                         SpellCasting.CastCurrentSpellOnRayCastTarget(
-                                            index: pitemindex,
-                                            objList: UWTileMap.current_tilemap.LevelObjects,
-                                            WorldObject: true);
+                            index: pitemindex,
+                            objList: UWTileMap.current_tilemap.LevelObjects,
+                            WorldObject: true);
                     }
                 }
                 else
@@ -258,22 +336,32 @@ namespace Underworld
             }
             else
             {
-                //clicked on a tile. r8 = tileface, g8 = tilex, b8 = tiley
                 var tileX = pixel.G8;
                 var tileY = pixel.B8;
                 if (UWTileMap.ValidTile(tileX, tileY))
                 {
-                    var tile = UWTileMap.current_tilemap.Tiles[tileX, tileY];
                     if (InteractionMode == InteractionModes.ModeLook)
                     {
-                        LookAtTile(pixel.R8, tileX, tileY);//there needs to be a distance check to see if the player sees something or nothing. I think it should be based on the shading.
-                    }
-                    else
-                    {
-                        //do nothing.
+                        LookAtTile(pixel.R8, tileX, tileY);
                     }
                 }
             }
+        }
+
+
+        public static void ClickOnViewPort(InputEventMouseButton eventMouseButton)
+        {
+            if (!InGame) { return; }
+            ViewPortMouseXPos = eventMouseButton.Position.X;
+            ViewPortMouseYPos = eventMouseButton.Position.Y;
+            if (uimanager.InteractionMode == InteractionModes.ModeAttack)
+            {
+                return;
+            }
+
+            bool leftClick = (eventMouseButton.ButtonIndex == MouseButton.Left);
+            var mouse = uimanager.instance.uwviewport.GetLocalMousePosition();
+            ProcessObjectInfoPixel(UwLocalToObjectInfoPixel(mouse), leftClick);
 
             // return;
             // if (result != null)

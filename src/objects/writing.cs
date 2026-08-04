@@ -9,6 +9,10 @@ namespace Underworld
             var modelNode = b.Generate3DModel(parent, name);
             SetModelRotation(parent, b);
             AlignToWall(parent, obj, nudgeFactor: 0.08f);
+            if (uwsettings.instance.vr_debug)
+            {
+                b.AttachDebugOverlay(parent);
+            }
 
             return b;
         }
@@ -70,6 +74,28 @@ namespace Underworld
         {
             //(20 + (flags & 0x07)           
             return GetTmObj.GetMaterialForObject(20 + (uwobject.flags & 0x07),uwobject);
+        }
+
+        void AttachDebugOverlay(Node3D parent)
+        {
+            var label = new Label3D
+            {
+                Name = "WritingDebug",
+                Text = $"writing #{uwobject.index}\n" +
+                       $"tile {uwobject.tileX},{uwobject.tileY}\n" +
+                       $"h{uwobject.heading} xy({uwobject.xpos},{uwobject.ypos}) z{uwobject.zpos}\n" +
+                       $"ci=0x{uwobject.classindex:X} flags={uwobject.flags}\n" +
+                       $"wScale={tileMapRender.WorldScaleFactor:F2}",
+                FontSize = 48,
+                PixelSize = 0.0012f,
+                Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+                Modulate = new Color(0.4f, 1f, 0.5f),
+                OutlineSize = 4,
+                OutlineModulate = Colors.Black,
+                Position = new Vector3(0f, 0.35f, 0.08f),
+                Layers = main.LayerGeo | main.LayerXFER,
+            };
+            parent.AddChild(label);
         }
 
     }//end class

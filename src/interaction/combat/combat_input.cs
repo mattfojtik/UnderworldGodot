@@ -134,7 +134,8 @@ namespace Underworld
             {
                 return;
             }
-            bool MouseHeldDown = (Input.IsMouseButtonPressed(MouseButton.Right) && uimanager.IsMouseInViewPort());
+            bool MouseHeldDown = (Input.IsMouseButtonPressed(MouseButton.Right) && uimanager.IsMouseInViewPort())
+                || (VrController.IsActive && (VrController.IsHud3DViewportRightHeld || VrController.IsVrWorldRightHeld));
             //check bash, slash and stab inputs.
             bool KeyboardAttackHeldDown =  Input.IsKeyPressed(Key.P) || Input.IsKeyPressed(Key.Semicolon) || Input.IsKeyPressed(Key.Period);
             switch (stage)

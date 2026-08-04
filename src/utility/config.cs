@@ -104,6 +104,12 @@ public class uwsettings
     public bool vr_mirror { get; set; } = false;
     /// <summary>Show a semi-transparent capsule at the simulated player body (collision position).</summary>
     public bool vr_show_body { get; set; } = true;
+    /// <summary>
+    /// Native VR: show the DOS-style HUD (inventory, flasks, actions) on a panel attached to the left controller.
+    /// </summary>
+    public bool vr_hud_panel { get; set; } = true;
+    /// <summary>Width of the left-hand HUD quad in metres (height follows 1280×800 aspect).</summary>
+    public float vr_hud_panel_width { get; set; } = 0.42f;
     public float FOV { get; set; } = 75;
     public bool showcolliders { get; set; }
     public int shaderbandsize { get; set; } = 8;

@@ -375,6 +375,11 @@ public partial class main : Node3D
 
 		if ((uimanager.InGame) && (!uimanager.blockinput))
 		{
+			if (uwsettings.instance.vr)
+			{
+				VrController.TickVrInput();
+			}
+
 			combat.CombatInputHandler(delta);//may need to be moved outside this block
 			playerdat.PlayerTimedLoop(delta);
 			RefreshWorldState();//handles teleports, tile redraws	

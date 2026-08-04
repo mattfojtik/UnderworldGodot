@@ -11,6 +11,18 @@ public static class VrController
 {
 	public static bool IsActive { get; private set; }
 
+	/// <summary>Right-hand laser is over the 3D viewport hole in the HUD (not chrome/buttons).</summary>
+	public static bool IsHud3DViewportHovering { get; private set; }
+
+	/// <summary>Right grip held while pointing at the 3D viewport (attack charge/release).</summary>
+	public static bool IsHud3DViewportRightHeld { get; private set; }
+
+	/// <summary>Controller laser is aimed into the live VR world (not the HUD panel).</summary>
+	public static bool IsVrWorldPointerActive { get; private set; }
+
+	/// <summary>Right grip held while aiming into the live VR world.</summary>
+	public static bool IsVrWorldRightHeld { get; private set; }
+
 	public const float VrViewDistance = 512f;
 
 	static Vector3 _baseGodotScale;
@@ -24,6 +36,24 @@ public static class VrController
 	static XRCamera3D _xrCamera;
 	static XRController3D _leftController;
 	static XRController3D _rightController;
+	static SubViewport _hudViewport;
+	static MeshInstance3D _hudPanel;
+	static CanvasLayer _hudMouseLayer;
+	static MeshInstance3D _pointerLaser;
+	static CylinderMesh _pointerLaserMesh;
+	static bool _hudPanelVisible = true;
+	static bool _hudMenuToggleWasPressed;
+	static Vector2 _lastHudPointerPos = new(-1f, -1f);
+	static bool _hudPointerHovering;
+	static bool _hudPointerLeftWasPressed;
+	static bool _hudPointerRightWasPressed;
+	static bool _worldPointerLeftWasPressed;
+	static bool _worldPointerRightWasPressed;
+	static bool _pendingWorldInteract;
+	static bool _pendingWorldInteractLeft;
+	static Vector3 _pendingRayOrigin;
+	static Vector3 _pendingRayDir;
+	static int _pendingWorldInteractDelayFrames;
 	static main _gameRoot;
 	static SceneTree _sceneTree;
 	static float _snapTurnCooldown;
@@ -54,6 +84,14 @@ public static class VrController
 	const float MirrorScreenDistanceMeters = 0.85f;
 	const float BodyMarkerScale = 0.1f;
 	const float DoorUseCooldownSeconds = 0.35f;
+	const float HudPointerMaxDistance = 2.5f;
+	const float PointerLaserRadius = 0.0025f;
+	const int HudPanelWidthPx = 1280;
+	const int HudPanelHeightPx = 800;
+	/// <summary>Left-controller local offset for the HUD quad (metres).</summary>
+	static readonly Vector3 HudPanelLocalPosition = new(0.04f, 0.06f, 0.14f);
+	/// <summary>Tilt/yaw so the panel faces roughly toward the user from the left grip.</summary>
+	static readonly Vector3 HudPanelLocalRotationDegrees = new(-70f, 180f, 180f);
 	/// <summary>Eye height above floor in Godot metres (0xA4 game units).</summary>
 	static float GameEyeHeightMeters => (0xA4 / 1024f) * tileMapRender.godotscale.Y;
 
@@ -69,9 +107,8 @@ public static class VrController
 		"joystick",
 	};
 
-	static readonly StringName[] UseButtonActions =
+	static readonly StringName[] DoorUseButtonActions =
 	{
-		"trigger_click",
 		"grip_click",
 	};
 
@@ -92,6 +129,23 @@ public static class VrController
 	{
 		"ax_button",
 		"x_button",
+	};
+
+	// Left-hand by_button is Quest Y (menu toggle).
+	static readonly StringName[] HudMenuToggleButtonActions =
+	{
+		"by_button",
+		"y_button",
+	};
+
+	static readonly StringName[] HudLeftClickActions =
+	{
+		"trigger_click",
+	};
+
+	static readonly StringName[] HudRightClickActions =
+	{
+		"grip_click",
 	};
 
 	public static void InitExplorePlayer()
@@ -194,6 +248,7 @@ public static class VrController
 
 		if (ObjectUsesSpriteMeshScale(obj, renderedAsGenericSprite))
 		{
+			node.Scale = Vector3.One;
 			return;
 		}
 
@@ -214,6 +269,12 @@ public static class VrController
 		}
 
 		if (obj.majorclass == 1)
+		{
+			return true;
+		}
+
+		// GR sprites: runestones (majorclass 3, any minorclass) and similar.
+		if (obj.majorclass == 3 || runestone.IsRunestone(obj.item_id))
 		{
 			return true;
 		}
@@ -307,13 +368,7 @@ public static class VrController
 			{
 				model3D.AlignToWall(node, obj, nudgeFactor: 0.1f);
 			}
-			else if (obj.classindex == 0xE || obj.classindex == 0xF)
-			{
-				if (obj.instance is tmap grate)
-				{
-					grate.ApplyWallPlacement(node);
-				}
-			}
+			// Tmaps: placement is set at CreateInstance; don't re-run VR wall refresh (breaks storm drains).
 		}
 	}
 
@@ -350,18 +405,42 @@ public static class VrController
 
 		if (obj.instance is genericsprite && obj.instance.uwnode?.GetChildCount() > 0)
 		{
-			if (obj.instance.uwnode.GetChild(0) is uwMeshInstance3D sprite && sprite.Mesh is QuadMesh quad)
+			RefreshSpriteQuadChild(obj.instance.uwnode.GetChild(0), obj.item_id, ObjectCreator.grObjects);
+			return;
+		}
+
+		if (obj.majorclass == 3 && obj.instance.uwnode?.GetChildCount() > 0)
+		{
+			RefreshSpriteQuadChild(obj.instance.uwnode.GetChild(0), obj.item_id, ObjectCreator.grObjects);
+			if (obj.instance.uwnode is Node3D node)
 			{
-				var img = ObjectCreator.grObjects?.LoadImageAt(obj.item_id);
-				if (img != null)
-				{
-					var newSize = new Vector2(
-						ArtLoader.SpriteScale * img.GetWidth(),
-						ArtLoader.SpriteScale * img.GetHeight());
-					quad.Size = newSize;
-					sprite.Position = new Vector3(0, newSize.Y / 2f, 0);
-				}
+				node.Scale = Vector3.One;
+				node.Position = obj.GetCoordinate();
 			}
+		}
+	}
+
+	static void RefreshSpriteQuadChild(Node child, int spriteNo, GRLoader gr)
+	{
+		if (child is not uwMeshInstance3D sprite || sprite.Mesh is not QuadMesh quad || gr == null)
+		{
+			return;
+		}
+
+		var img = gr.LoadImageAt(spriteNo);
+		if (img == null)
+		{
+			return;
+		}
+
+		var newSize = new Vector2(
+			ArtLoader.SpriteScale * img.GetWidth(),
+			ArtLoader.SpriteScale * img.GetHeight());
+		quad.Size = newSize;
+		sprite.Position = new Vector3(0, newSize.Y / 2f, 0);
+		if (sprite.GetParent() is Node3D parent)
+		{
+			parent.Scale = Vector3.One;
 		}
 	}
 
@@ -415,8 +494,6 @@ public static class VrController
 			_doorUseCooldown -= delta;
 		}
 
-		ApplyDoorInteraction();
-
 		if (uwsettings.instance.vr_mirror)
 		{
 			SyncXrOriginBodyFromGame();
@@ -425,6 +502,7 @@ public static class VrController
 		else
 		{
 			ApplyQuitInput();
+			ApplyHudMenuToggleInput();
 			ApplyRecenterInput();
 			SyncXrOriginFromGimbal();
 			ApplyNativeXrTrackingPassthrough();
@@ -442,6 +520,21 @@ public static class VrController
 		{
 			LogVrRuntimeState();
 		}
+	}
+
+	/// <summary>VR pointer/attack input — runs in _Process so combat reads grip on the same frame.</summary>
+	public static void TickVrInput()
+	{
+		if (!IsActive)
+		{
+			return;
+		}
+
+		SyncVrObjectInfoCamera();
+		ProcessPendingWorldInteract();
+		ApplyHudPointerInput();
+		ApplyWorldPointerInput();
+		ApplyDoorInteraction();
 	}
 
 	static void HookProcessFrame()
@@ -580,6 +673,11 @@ public static class VrController
 		ConfigureFlatScreenPresentation(_gameRoot);
 		RescaleExistingWorldObjects(underworld);
 		EnsureBodyMarker(underworld);
+		if (!uwsettings.instance.vr_mirror)
+		{
+			SetupHudHandPanel(underworld);
+			EnsurePointerLaser(underworld);
+		}
 		playerdat.RefreshLighting();
 		ResetXrOriginFloorTracking();
 		playerdat.PositionPlayerCamera();
@@ -674,6 +772,157 @@ public static class VrController
 		{
 			worldView.Visible = uwsettings.instance.vr_mirror && uwsettings.instance.vr_debug;
 		}
+	}
+
+	/// <summary>
+	/// Render the existing 1280×800 CanvasLayer HUD into a SubViewport and show it
+	/// on a quad attached to the left controller (ViveCraft-style).
+	/// </summary>
+	static void SetupHudHandPanel(Node3D underworld)
+	{
+		if (!uwsettings.instance.vr_hud_panel || _leftController == null || _hudPanel != null)
+		{
+			return;
+		}
+
+		var ui = underworld.GetNodeOrNull<CanvasLayer>("UI");
+		if (ui == null)
+		{
+			GD.PushWarning("[VR] HUD panel: UI CanvasLayer not found.");
+			return;
+		}
+
+		_hudViewport = new SubViewport
+		{
+			Name = "VrHudViewport",
+			Size = new Vector2I(HudPanelWidthPx, HudPanelHeightPx),
+			TransparentBg = false,
+			Disable3D = true,
+			HandleInputLocally = true,
+			GuiDisableInput = false,
+			RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+			Msaa2D = Viewport.Msaa.Disabled,
+		};
+		underworld.AddChild(_hudViewport);
+
+		ui.FollowViewportEnabled = false;
+		ui.GetParent()?.RemoveChild(ui);
+		_hudViewport.AddChild(ui);
+
+		// Shown while the right-hand laser points at the panel.
+		_hudMouseLayer = ui.GetNodeOrNull<CanvasLayer>("mouse");
+		if (_hudMouseLayer != null)
+		{
+			_hudMouseLayer.Visible = false;
+		}
+
+		var width = uwsettings.instance.vr_hud_panel_width;
+		if (width <= 0.05f)
+		{
+			width = 0.42f;
+		}
+
+		var aspect = (float)HudPanelHeightPx / HudPanelWidthPx;
+		var material = new StandardMaterial3D
+		{
+			AlbedoTexture = _hudViewport.GetTexture(),
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			DisableReceiveShadows = true,
+		};
+
+		_hudPanel = new MeshInstance3D
+		{
+			Name = "VrHudPanel",
+			Mesh = new QuadMesh
+			{
+				Size = new Vector2(width, width * aspect),
+				Material = material,
+			},
+			Position = HudPanelLocalPosition,
+			RotationDegrees = HudPanelLocalRotationDegrees,
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			Layers = main.LayerGeo | main.LayerXFER,
+		};
+		_leftController.AddChild(_hudPanel);
+		SetHudPanelVisible(_hudPanelVisible);
+
+		GD.Print($"[VR] HUD hand panel attached to left controller ({width:F2}m wide, {HudPanelWidthPx}x{HudPanelHeightPx}).");
+	}
+
+	static void SetHudPanelVisible(bool visible)
+	{
+		_hudPanelVisible = visible;
+		if (_hudPanel != null)
+		{
+			_hudPanel.Visible = visible;
+		}
+
+		if (!visible)
+		{
+			_hudPointerHovering = false;
+			_lastHudPointerPos = new Vector2(-1f, -1f);
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = false;
+			}
+
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+		}
+	}
+
+	static void ApplyHudMenuToggleInput()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null)
+		{
+			_hudMenuToggleWasPressed = false;
+			return;
+		}
+
+		var pressed = IsButtonPressed(_leftController, HudMenuToggleButtonActions);
+		if (pressed && !_hudMenuToggleWasPressed)
+		{
+			SetHudPanelVisible(!_hudPanelVisible);
+			GD.Print($"[VR] HUD panel {(_hudPanelVisible ? "shown" : "hidden")} (Y).");
+		}
+
+		_hudMenuToggleWasPressed = pressed;
+	}
+
+	static void EnsurePointerLaser(Node3D underworld)
+	{
+		if (_pointerLaser != null || underworld == null)
+		{
+			return;
+		}
+
+		var laserMat = new StandardMaterial3D
+		{
+			AlbedoColor = new Color(0.25f, 0.9f, 1f, 0.9f),
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			DisableReceiveShadows = true,
+		};
+
+		_pointerLaserMesh = new CylinderMesh
+		{
+			TopRadius = PointerLaserRadius,
+			BottomRadius = PointerLaserRadius,
+			Height = 1f,
+			Material = laserMat,
+		};
+
+		_pointerLaser = new MeshInstance3D
+		{
+			Name = "VrPointerLaser",
+			Mesh = _pointerLaserMesh,
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			Layers = main.LayerGeo | main.LayerXFER,
+			Visible = false,
+		};
+		underworld.AddChild(_pointerLaser);
 	}
 
 	public static void ResetXrOriginFloorTracking()
@@ -1235,6 +1484,474 @@ public static class VrController
 		_bodyMarker.Rotation = new Vector3(0f, bodyYaw, 0f);
 	}
 
+	static void SyncVrObjectInfoCamera()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || _xrCamera == null)
+		{
+			return;
+		}
+
+		if (main.cameraPitchGimbal_objectinfo != null)
+		{
+			main.cameraPitchGimbal_objectinfo.GlobalTransform = _xrCamera.GlobalTransform;
+		}
+	}
+
+	static void ApplyWorldPointerInput()
+	{
+		IsVrWorldPointerActive = false;
+		IsVrWorldRightHeld = false;
+
+		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null || _xrCamera == null)
+		{
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+			return;
+		}
+
+		if (_hudPanelVisible && _hudPointerHovering)
+		{
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+			return;
+		}
+
+		var rayOrigin = _rightController.GlobalPosition;
+		var rayDir = GetControllerRayDir();
+		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+		var inAttackMode = uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
+
+		if (!_hudPanelVisible)
+		{
+			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * HudPointerMaxDistance, visible: true);
+		}
+
+		// Attack charge needs a steady grip hold; controller aim diverges from head look
+		// when pointing at world targets, so skip the head-alignment gate in attack mode.
+		if (inAttackMode)
+		{
+			IsVrWorldPointerActive = true;
+			UpdateViewPortMouseFromControllerAim(rayDir);
+			IsVrWorldRightHeld = rightPressed;
+			_worldPointerRightWasPressed = rightPressed;
+
+			var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+			if (leftPressed && !_worldPointerLeftWasPressed && IsControllerAimedIntoView(rayDir))
+			{
+				QueueWorldInteract(rayOrigin, rayDir, leftClick: true);
+			}
+			_worldPointerLeftWasPressed = leftPressed;
+			return;
+		}
+
+		if (!IsControllerAimedIntoView(rayDir))
+		{
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+			return;
+		}
+
+		IsVrWorldPointerActive = true;
+		UpdateViewPortMouseFromControllerAim(rayDir);
+
+		var leftPressedInteract = IsButtonPressed(_rightController, HudLeftClickActions);
+		if (leftPressedInteract && !_worldPointerLeftWasPressed)
+		{
+			QueueWorldInteract(rayOrigin, rayDir, leftClick: true);
+		}
+		_worldPointerLeftWasPressed = leftPressedInteract;
+
+		if (rightPressed && !_worldPointerRightWasPressed)
+		{
+			QueueWorldInteract(rayOrigin, rayDir, leftClick: false);
+		}
+		_worldPointerRightWasPressed = rightPressed;
+	}
+
+	static bool IsControllerAimedIntoView(Vector3 rayDir)
+	{
+		var headForward = -_xrCamera.GlobalTransform.Basis.Z;
+		if (headForward.LengthSquared() < 0.0001f)
+		{
+			return false;
+		}
+
+		return headForward.Normalized().Dot(rayDir) > 0.25f;
+	}
+
+	static void UpdateViewPortMouseFromControllerAim(Vector3 rayDir)
+	{
+		var local = _xrCamera.GlobalTransform.Basis.Inverse() * rayDir;
+		var vp = uimanager.instance.uwviewport;
+		var xNorm = Mathf.Clamp(0.5f + local.X * 1.2f, 0f, 1f);
+		var yNorm = Mathf.Clamp(0.5f - local.Y * 1.2f, 0f, 1f);
+		uimanager.SetViewPortMouseFromUwLocal(new Vector2(xNorm * vp.Size.X, yNorm * vp.Size.Y));
+	}
+
+	static void QueueWorldInteract(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	{
+		_pendingWorldInteract = true;
+		_pendingWorldInteractLeft = leftClick;
+		_pendingRayOrigin = rayOrigin;
+		_pendingRayDir = rayDir;
+		_pendingWorldInteractDelayFrames = 1;
+	}
+
+	static void ProcessPendingWorldInteract()
+	{
+		if (!_pendingWorldInteract)
+		{
+			return;
+		}
+
+		if (_pendingWorldInteractDelayFrames > 0)
+		{
+			_pendingWorldInteractDelayFrames--;
+			return;
+		}
+
+		_pendingWorldInteract = false;
+		TryInteractObjectInfoPick(_pendingRayOrigin, _pendingRayDir, _pendingWorldInteractLeft);
+	}
+
+	static void TryInteractObjectInfoPick(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	{
+		var text = (Texture2D)uimanager.instance?.uwsubviewport_objectinfo?.GetTexture();
+		if (text == null)
+		{
+			return;
+		}
+
+		var img = text.GetImage();
+		var maxDist = uimanager.RayDistance;
+		if (maxDist <= 0f)
+		{
+			maxDist = 3f;
+		}
+
+		maxDist *= tileMapRender.TileWidth;
+		var step = tileMapRender.TileWidth * 0.2f;
+		Vector2 bestPixel = default;
+		var hasSample = false;
+
+		for (var dist = step; dist <= maxDist; dist += step)
+		{
+			if (!TryUnprojectToObjectInfoPixel(rayOrigin + rayDir * dist, out var samplePixel))
+			{
+				continue;
+			}
+
+			hasSample = true;
+			bestPixel = samplePixel;
+			if (uimanager.TryGetObjectIndexFromImage(img, samplePixel, out _))
+			{
+				uimanager.SetViewPortMouseFromObjectInfoPixel(samplePixel);
+				uimanager.ProcessObjectInfoPixelFromImage(img, samplePixel, leftClick);
+				return;
+			}
+		}
+
+		if (hasSample)
+		{
+			uimanager.SetViewPortMouseFromObjectInfoPixel(bestPixel);
+			uimanager.ProcessObjectInfoPixelFromImage(img, bestPixel, leftClick);
+			return;
+		}
+
+		if (TryGetHeadCenterObjectInfoPixel(out var headPixel))
+		{
+			uimanager.SetViewPortMouseFromObjectInfoPixel(headPixel);
+			uimanager.ProcessObjectInfoPixelFromImage(img, headPixel, leftClick);
+		}
+	}
+
+	static bool TryGetHeadCenterObjectInfoPixel(out Vector2 texPixel)
+	{
+		texPixel = default;
+		if (_xrCamera == null || uimanager.instance?.uwsubviewport_objectinfo == null)
+		{
+			return false;
+		}
+
+		var lookPoint = _xrCamera.GlobalPosition + (-_xrCamera.GlobalTransform.Basis.Z) * 2f;
+		return TryUnprojectToObjectInfoPixel(lookPoint, out texPixel);
+	}
+
+	static void TryInteractWorldRay(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	{
+		QueueWorldInteract(rayOrigin, rayDir, leftClick);
+	}
+
+	static Vector3 GetControllerRayDir()
+	{
+		var rayDir = -_rightController.GlobalTransform.Basis.Z;
+		if (rayDir.LengthSquared() < 0.0001f)
+		{
+			rayDir = -_rightController.GlobalTransform.Basis.Y;
+		}
+
+		return rayDir.Normalized();
+	}
+
+	static bool TryUnprojectToObjectInfoPixel(Vector3 worldPoint, out Vector2 texPixel)
+	{
+		texPixel = default;
+		if (_xrCamera == null || uimanager.instance?.uwsubviewport_objectinfo == null)
+		{
+			return false;
+		}
+
+		var screen = _xrCamera.UnprojectPosition(worldPoint);
+		var vpSize = _xrCamera.GetViewport().GetVisibleRect().Size;
+		if (screen.X < 0f || screen.Y < 0f || screen.X > vpSize.X || screen.Y > vpSize.Y)
+		{
+			return false;
+		}
+
+		var uwSize = uimanager.instance.uwsubviewport_objectinfo.Size;
+		texPixel = new Vector2(
+			screen.X / Mathf.Max(1f, vpSize.X) * uwSize.X,
+			screen.Y / Mathf.Max(1f, vpSize.Y) * uwSize.Y);
+		return true;
+	}
+
+	static void ApplyHudPointerInput()
+	{
+		IsHud3DViewportHovering = false;
+		IsHud3DViewportRightHeld = false;
+
+		if (!IsActive || uwsettings.instance.vr_mirror || _hudViewport == null || _hudPanel == null || _rightController == null)
+		{
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = false;
+			}
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			return;
+		}
+
+		if (!_hudPanelVisible)
+		{
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			return;
+		}
+
+		var rayOrigin = _rightController.GlobalPosition;
+		var rayDir = -_rightController.GlobalTransform.Basis.Z;
+		if (rayDir.LengthSquared() < 0.0001f)
+		{
+			rayDir = -_rightController.GlobalTransform.Basis.Y;
+		}
+		rayDir = rayDir.Normalized();
+
+		var hovering = TryGetHudPanelHit(rayOrigin, rayDir, out var viewportPos, out var hitWorld);
+		var laserEnd = hovering ? hitWorld : rayOrigin + rayDir * HudPointerMaxDistance;
+		UpdatePointerLaser(rayOrigin, laserEnd, visible: true);
+
+		if (hovering)
+		{
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = true;
+			}
+
+			if (viewportPos != _lastHudPointerPos)
+			{
+				_lastHudPointerPos = viewportPos;
+				PushHudMouseMotion(viewportPos);
+			}
+		}
+		else
+		{
+			_lastHudPointerPos = new Vector2(-1f, -1f);
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = false;
+			}
+		}
+
+		_hudPointerHovering = hovering;
+
+		if (hovering)
+		{
+			var in3dViewport = TryMapToUwViewport(viewportPos, out var uwLocal);
+			if (in3dViewport)
+			{
+				IsHud3DViewportHovering = true;
+				uimanager.SetViewPortMouseFromUwLocal(uwLocal);
+
+				var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+				if (leftPressed && !_hudPointerLeftWasPressed)
+				{
+					uimanager.TriggerViewPortClick(uwLocal, leftClick: true);
+				}
+				_hudPointerLeftWasPressed = leftPressed;
+
+				var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+				if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
+				{
+					IsHud3DViewportRightHeld = rightPressed;
+				}
+				else if (rightPressed && !_hudPointerRightWasPressed)
+				{
+					uimanager.TriggerViewPortClick(uwLocal, leftClick: false);
+				}
+				_hudPointerRightWasPressed = rightPressed;
+			}
+			else
+			{
+				var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+				if (leftPressed && !_hudPointerLeftWasPressed)
+				{
+					PushHudMouseClick(viewportPos, MouseButton.Left);
+				}
+				_hudPointerLeftWasPressed = leftPressed;
+
+				var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+				if (rightPressed && !_hudPointerRightWasPressed)
+				{
+					PushHudMouseClick(viewportPos, MouseButton.Right);
+				}
+				_hudPointerRightWasPressed = rightPressed;
+			}
+		}
+		else
+		{
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+		}
+	}
+
+	static bool TryMapToUwViewport(Vector2 hudViewportPos, out Vector2 uwLocal)
+	{
+		uwLocal = default;
+		var uwViewport = uimanager.instance?.uwviewport;
+		if (uwViewport == null)
+		{
+			return false;
+		}
+
+		uwLocal = hudViewportPos - uwViewport.Position;
+		return uwLocal.X >= 0f && uwLocal.Y >= 0f
+			&& uwLocal.X <= uwViewport.Size.X && uwLocal.Y <= uwViewport.Size.Y;
+	}
+
+	static bool TryGetHudPanelHit(Vector3 rayOrigin, Vector3 rayDir, out Vector2 viewportPos, out Vector3 hitWorld)
+	{
+		viewportPos = default;
+		hitWorld = rayOrigin + rayDir * HudPointerMaxDistance;
+		if (_hudPanel?.Mesh is not QuadMesh quad)
+		{
+			return false;
+		}
+
+		var xf = _hudPanel.GlobalTransform;
+		var planeNormal = xf.Basis.Z;
+		var denom = planeNormal.Dot(rayDir);
+		if (Mathf.Abs(denom) < 1e-6f)
+		{
+			return false;
+		}
+
+		var t = (xf.Origin - rayOrigin).Dot(planeNormal) / denom;
+		if (t < 0f || t > HudPointerMaxDistance)
+		{
+			return false;
+		}
+
+		hitWorld = rayOrigin + rayDir * t;
+		var local = xf.AffineInverse() * hitWorld;
+		var half = quad.Size * 0.5f;
+		if (Mathf.Abs(local.X) > half.X || Mathf.Abs(local.Y) > half.Y)
+		{
+			return false;
+		}
+
+		var u = (local.X / quad.Size.X) + 0.5f;
+		var v = (local.Y / quad.Size.Y) + 0.5f;
+		viewportPos = new Vector2(
+			Mathf.Clamp(u * HudPanelWidthPx, 0f, HudPanelWidthPx - 1f),
+			Mathf.Clamp((1f - v) * HudPanelHeightPx, 0f, HudPanelHeightPx - 1f));
+		return true;
+	}
+
+	static void UpdatePointerLaser(Vector3 from, Vector3 to, bool visible)
+	{
+		if (_pointerLaser == null || _pointerLaserMesh == null)
+		{
+			return;
+		}
+
+		_pointerLaser.Visible = visible;
+		if (!visible)
+		{
+			return;
+		}
+
+		var delta = to - from;
+		var length = delta.Length();
+		if (length < 0.005f)
+		{
+			_pointerLaser.Visible = false;
+			return;
+		}
+
+		var direction = delta / length;
+		_pointerLaserMesh.Height = length;
+		_pointerLaser.GlobalPosition = from + direction * (length * 0.5f);
+		_pointerLaser.GlobalBasis = BasisWithYAxis(direction);
+	}
+
+	/// <summary>CylinderMesh extends along local Y; align Y with <paramref name="axisY"/>.</summary>
+	static Basis BasisWithYAxis(Vector3 axisY)
+	{
+		var yAxis = axisY.Normalized();
+		var xAxis = Vector3.Up.Cross(yAxis);
+		if (xAxis.LengthSquared() < 1e-6f)
+		{
+			xAxis = Vector3.Forward.Cross(yAxis);
+		}
+
+		xAxis = xAxis.Normalized();
+		var zAxis = xAxis.Cross(yAxis);
+		return new Basis(xAxis, yAxis, zAxis);
+	}
+
+	static void PushHudMouseMotion(Vector2 viewportPos)
+	{
+		_hudViewport.WarpMouse(viewportPos);
+		var motion = new InputEventMouseMotion
+		{
+			Position = viewportPos,
+			GlobalPosition = viewportPos,
+		};
+		_hudViewport.PushInput(motion);
+	}
+
+	static void PushHudMouseClick(Vector2 viewportPos, MouseButton button)
+	{
+		PushHudMouseButton(viewportPos, button, pressed: true);
+		PushHudMouseButton(viewportPos, button, pressed: false);
+	}
+
+	static void PushHudMouseButton(Vector2 viewportPos, MouseButton button, bool pressed)
+	{
+		_hudViewport.WarpMouse(viewportPos);
+		var mouseButton = new InputEventMouseButton
+		{
+			ButtonIndex = button,
+			Pressed = pressed,
+			Position = viewportPos,
+			GlobalPosition = viewportPos,
+		};
+		_hudViewport.PushInput(mouseButton);
+	}
+
 	static void ApplyDoorInteraction()
 	{
 		if (!IsActive || playerdat.ParalyseTimer > 0)
@@ -1243,9 +1960,20 @@ public static class VrController
 			return;
 		}
 
-		var pressed = IsUseButtonPressed(_rightController) || IsUseButtonPressed(_leftController);
+		var pressed = IsButtonPressed(_leftController, DoorUseButtonActions);
 		if (pressed && !_doorUseWasPressed && _doorUseCooldown <= 0f)
 		{
+			// Right trigger/grip on the HUD panel are reserved for UI clicks.
+			if ((_hudPointerHovering && _hudPanelVisible &&
+				(IsButtonPressed(_rightController, HudLeftClickActions) ||
+				 IsButtonPressed(_rightController, HudRightClickActions)))
+				|| IsHud3DViewportRightHeld
+				|| IsVrWorldRightHeld)
+			{
+				_doorUseWasPressed = pressed;
+				return;
+			}
+
 			var target = FindTargetDoor();
 			if (target != null)
 			{
@@ -1255,11 +1983,6 @@ public static class VrController
 		}
 
 		_doorUseWasPressed = pressed;
-	}
-
-	static bool IsUseButtonPressed(XRController3D controller)
-	{
-		return IsButtonPressed(controller, UseButtonActions);
 	}
 
 	static uwObject FindTargetDoor()
