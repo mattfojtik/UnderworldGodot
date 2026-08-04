@@ -373,13 +373,14 @@ public partial class main : Node3D
 			}
 		}
 
+		// VR pointer/laser must keep updating during conversations and other blockinput menus.
+		if (VrController.ShouldTickVrInput())
+		{
+			VrController.TickVrInput();
+		}
+
 		if ((uimanager.InGame) && (!uimanager.blockinput))
 		{
-			if (uwsettings.instance.vr)
-			{
-				VrController.TickVrInput();
-			}
-
 			combat.CombatInputHandler(delta);//may need to be moved outside this block
 			playerdat.PlayerTimedLoop(delta);
 			RefreshWorldState();//handles teleports, tile redraws	

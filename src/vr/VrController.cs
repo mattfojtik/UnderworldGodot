@@ -49,11 +49,6 @@ public static class VrController
 	static bool _hudPointerRightWasPressed;
 	static bool _worldPointerLeftWasPressed;
 	static bool _worldPointerRightWasPressed;
-	static bool _pendingWorldInteract;
-	static bool _pendingWorldInteractLeft;
-	static Vector3 _pendingRayOrigin;
-	static Vector3 _pendingRayDir;
-	static int _pendingWorldInteractDelayFrames;
 	static main _gameRoot;
 	static SceneTree _sceneTree;
 	static float _snapTurnCooldown;
@@ -65,6 +60,7 @@ public static class VrController
 	static bool _xrOriginFloorInitialized;
 	static Vector3 _lastAvatarFloorPos;
 	static short _lastSyncedBodyYaw;
+	static float _xrPlaySpaceYawRadians;
 	static int _debugFrameCounter;
 	static int _setupWaitFrames;
 
@@ -79,6 +75,8 @@ public static class VrController
 	const float StickDeadzone = 0.35f;
 	const float SnapTurnDegrees = 45f;
 	const float SnapTurnCooldownSeconds = 0.35f;
+	// Only compensate headset XZ when yaw jumps by snap-turn amount (~45°), not gradual body alignment.
+	const short SnapTurnYawCompensationThreshold = 6000;
 	const int DebugLogIntervalFrames = 180;
 	const float MirrorScreenWidthMeters = 1.5f;
 	const float MirrorScreenDistanceMeters = 0.85f;
@@ -522,6 +520,17 @@ public static class VrController
 		}
 	}
 
+	/// <summary>True when VR pointer/laser input should run (includes conversations and automap).</summary>
+	public static bool ShouldTickVrInput()
+	{
+		if (!IsActive || !uwsettings.instance.vr || uwsettings.instance.vr_mirror)
+		{
+			return false;
+		}
+
+		return uimanager.InGame || uimanager.InConversation || uimanager.InAutomap;
+	}
+
 	/// <summary>VR pointer/attack input — runs in _Process so combat reads grip on the same frame.</summary>
 	public static void TickVrInput()
 	{
@@ -530,8 +539,6 @@ public static class VrController
 			return;
 		}
 
-		SyncVrObjectInfoCamera();
-		ProcessPendingWorldInteract();
 		ApplyHudPointerInput();
 		ApplyWorldPointerInput();
 		ApplyDoorInteraction();
@@ -682,6 +689,10 @@ public static class VrController
 		ResetXrOriginFloorTracking();
 		playerdat.PositionPlayerCamera();
 		SnapRoomOriginToAvatar();
+		if (uimanager.InGame)
+		{
+			uimanager.UpdateInventoryDisplay();
+		}
 
 		TryEnableOpenXrOutput();
 
@@ -804,6 +815,7 @@ public static class VrController
 			Msaa2D = Viewport.Msaa.Disabled,
 		};
 		underworld.AddChild(_hudViewport);
+		_hudViewport.CanvasItemDefaultTextureFilter = Viewport.DefaultCanvasItemTextureFilter.Nearest;
 
 		ui.FollowViewportEnabled = false;
 		ui.GetParent()?.RemoveChild(ui);
@@ -940,6 +952,33 @@ public static class VrController
 		return new Vector3(feet.X, GetGameFloorY(), feet.Z);
 	}
 
+	static short GetWrappedYawDelta(short current, short previous)
+	{
+		var delta = (int)current - previous;
+		if (delta > 16384)
+		{
+			delta -= 32768;
+		}
+		else if (delta < -16384)
+		{
+			delta += 32768;
+		}
+
+		return (short)delta;
+	}
+
+	static float GetBodyYawRadians()
+	{
+		return (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
+	}
+
+	static void ApplyXrPlaySpaceRotation()
+	{
+		_xrOrigin.Rotation = Vector3.Zero;
+		_xrOrigin.Rotate(Vector3.Up, (float)Math.PI);
+		_xrOrigin.Rotate(Vector3.Up, _xrPlaySpaceYawRadians);
+	}
+
 	public static void SyncXrOriginFromGimbal()
 	{
 		if (_xrOrigin == null || main.cameraYawGimbal_world == null || uwsettings.instance.vr_mirror)
@@ -956,6 +995,8 @@ public static class VrController
 			_lastAvatarFloorPos = floorPos;
 			_xrOriginFloorInitialized = true;
 			_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
+			_xrPlaySpaceYawRadians = GetBodyYawRadians();
+			ApplyXrPlaySpaceRotation();
 		}
 		else
 		{
@@ -963,23 +1004,23 @@ public static class VrController
 			_lastAvatarFloorPos = floorPos;
 		}
 
-		// When body yaw changes (snap-turn), keep the headset world XZ fixed so the
-		// view rotates in place instead of orbiting the XROrigin.
-		var yawChanged = playerdat.PlayerCameraYaw_dseg_8294 != _lastSyncedBodyYaw;
-		var headBefore = yawChanged && _xrCamera != null ? _xrCamera.GlobalPosition : Vector3.Zero;
-
-		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
-		_xrOrigin.Rotation = Vector3.Zero;
-		_xrOrigin.Rotate(Vector3.Up, (float)Math.PI);
-		_xrOrigin.Rotate(Vector3.Up, bodyYaw);
-
-		if (yawChanged && _xrCamera != null)
+		// Only rotate the play space on snap-turns. Gradual body-yaw alignment during
+		// locomotion must not spin the XROrigin under the headset (causes backward jitter).
+		var yawDelta = GetWrappedYawDelta(playerdat.PlayerCameraYaw_dseg_8294, _lastSyncedBodyYaw);
+		var isSnapTurn = Math.Abs(yawDelta) >= SnapTurnYawCompensationThreshold;
+		if (isSnapTurn && _xrCamera != null)
 		{
+			var headBefore = _xrCamera.GlobalPosition;
+			_xrPlaySpaceYawRadians = GetBodyYawRadians();
+			ApplyXrPlaySpaceRotation();
 			var headAfter = _xrCamera.GlobalPosition;
 			_xrOrigin.GlobalPosition += new Vector3(headBefore.X - headAfter.X, 0f, headBefore.Z - headAfter.Z);
+			_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
 		}
-
-		_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
+		else
+		{
+			ApplyXrPlaySpaceRotation();
+		}
 	}
 
 	/// <summary>Mirror mode: XR origin carries body position/yaw; OpenXR rotates the XRCamera for head look.</summary>
@@ -1497,12 +1538,30 @@ public static class VrController
 		}
 	}
 
+	public static void OnConversationStarted()
+	{
+		if (!IsActive)
+		{
+			return;
+		}
+
+		SetHudPanelVisible(true);
+	}
+
 	static void ApplyWorldPointerInput()
 	{
 		IsVrWorldPointerActive = false;
 		IsVrWorldRightHeld = false;
 
 		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null || _xrCamera == null)
+		{
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+			return;
+		}
+
+		// Menus/conversations use the HUD laser only — don't raycast into the world.
+		if (uimanager.blockinput)
 		{
 			_worldPointerLeftWasPressed = false;
 			_worldPointerRightWasPressed = false;
@@ -1521,11 +1580,6 @@ public static class VrController
 		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
 		var inAttackMode = uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
 
-		if (!_hudPanelVisible)
-		{
-			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * HudPointerMaxDistance, visible: true);
-		}
-
 		// Attack charge needs a steady grip hold; controller aim diverges from head look
 		// when pointing at world targets, so skip the head-alignment gate in attack mode.
 		if (inAttackMode)
@@ -1536,18 +1590,11 @@ public static class VrController
 			_worldPointerRightWasPressed = rightPressed;
 
 			var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
-			if (leftPressed && !_worldPointerLeftWasPressed && IsControllerAimedIntoView(rayDir))
+			if (leftPressed && !_worldPointerLeftWasPressed)
 			{
-				QueueWorldInteract(rayOrigin, rayDir, leftClick: true);
+				TryInteractLaserPick(rayOrigin, rayDir, leftClick: true);
 			}
 			_worldPointerLeftWasPressed = leftPressed;
-			return;
-		}
-
-		if (!IsControllerAimedIntoView(rayDir))
-		{
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
 			return;
 		}
 
@@ -1557,26 +1604,15 @@ public static class VrController
 		var leftPressedInteract = IsButtonPressed(_rightController, HudLeftClickActions);
 		if (leftPressedInteract && !_worldPointerLeftWasPressed)
 		{
-			QueueWorldInteract(rayOrigin, rayDir, leftClick: true);
+			TryInteractLaserPick(rayOrigin, rayDir, leftClick: true);
 		}
 		_worldPointerLeftWasPressed = leftPressedInteract;
 
 		if (rightPressed && !_worldPointerRightWasPressed)
 		{
-			QueueWorldInteract(rayOrigin, rayDir, leftClick: false);
+			TryInteractLaserPick(rayOrigin, rayDir, leftClick: false);
 		}
 		_worldPointerRightWasPressed = rightPressed;
-	}
-
-	static bool IsControllerAimedIntoView(Vector3 rayDir)
-	{
-		var headForward = -_xrCamera.GlobalTransform.Basis.Z;
-		if (headForward.LengthSquared() < 0.0001f)
-		{
-			return false;
-		}
-
-		return headForward.Normalized().Dot(rayDir) > 0.25f;
 	}
 
 	static void UpdateViewPortMouseFromControllerAim(Vector3 rayDir)
@@ -1588,98 +1624,609 @@ public static class VrController
 		uimanager.SetViewPortMouseFromUwLocal(new Vector2(xNorm * vp.Size.X, yNorm * vp.Size.Y));
 	}
 
-	static void QueueWorldInteract(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	static float GetInteractRayDistance()
 	{
-		_pendingWorldInteract = true;
-		_pendingWorldInteractLeft = leftClick;
-		_pendingRayOrigin = rayOrigin;
-		_pendingRayDir = rayDir;
-		_pendingWorldInteractDelayFrames = 1;
-	}
-
-	static void ProcessPendingWorldInteract()
-	{
-		if (!_pendingWorldInteract)
-		{
-			return;
-		}
-
-		if (_pendingWorldInteractDelayFrames > 0)
-		{
-			_pendingWorldInteractDelayFrames--;
-			return;
-		}
-
-		_pendingWorldInteract = false;
-		TryInteractObjectInfoPick(_pendingRayOrigin, _pendingRayDir, _pendingWorldInteractLeft);
-	}
-
-	static void TryInteractObjectInfoPick(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
-	{
-		var text = (Texture2D)uimanager.instance?.uwsubviewport_objectinfo?.GetTexture();
-		if (text == null)
-		{
-			return;
-		}
-
-		var img = text.GetImage();
 		var maxDist = uimanager.RayDistance;
 		if (maxDist <= 0f)
 		{
 			maxDist = 3f;
 		}
 
-		maxDist *= tileMapRender.TileWidth;
-		var step = tileMapRender.TileWidth * 0.2f;
-		Vector2 bestPixel = default;
-		var hasSample = false;
+		return maxDist * tileMapRender.TileWidth;
+	}
 
-		for (var dist = step; dist <= maxDist; dist += step)
+	static void TryInteractLaserPick(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	{
+		if (!uimanager.InGame)
 		{
-			if (!TryUnprojectToObjectInfoPixel(rayOrigin + rayDir * dist, out var samplePixel))
-			{
-				continue;
-			}
+			return;
+		}
 
-			hasSample = true;
-			bestPixel = samplePixel;
-			if (uimanager.TryGetObjectIndexFromImage(img, samplePixel, out _))
+		if (SpellCasting.currentSpell != null)
+		{
+			if (SpellCasting.currentSpell.SpellMajorClass == 5)
 			{
-				uimanager.SetViewPortMouseFromObjectInfoPixel(samplePixel);
-				uimanager.ProcessObjectInfoPixelFromImage(img, samplePixel, leftClick);
+				SpellCasting.CastMagicProjectile(playerdat.playerObject, SpellCasting.currentSpell.SpellMinorClass);
 				return;
 			}
 		}
 
-		if (hasSample)
+		if (playerdat.ObjectInHand != -1)
 		{
-			uimanager.SetViewPortMouseFromObjectInfoPixel(bestPixel);
-			uimanager.ProcessObjectInfoPixelFromImage(img, bestPixel, leftClick);
+			var objToThrow = UWTileMap.current_tilemap.LevelObjects[playerdat.ObjectInHand];
+			var itemid = objToThrow.item_id;
+			if (pickup.DropObjectByPlayer(objToThrow, true))
+			{
+				playerdat.ObjectInHand = -1;
+				uimanager.instance.mousecursor.SetCursorToCursor();
+				pickup.DropSpecialCases(itemid);
+			}
+
 			return;
 		}
 
-		if (TryGetHeadCenterObjectInfoPixel(out var headPixel))
+		if (IsActive && uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
 		{
-			uimanager.SetViewPortMouseFromObjectInfoPixel(headPixel);
-			uimanager.ProcessObjectInfoPixelFromImage(img, headPixel, leftClick);
+			UpdateVisionFromHead(
+				(short)playerdat.playerObject.tileX,
+				(short)playerdat.playerObject.tileY,
+				GetHeadYawForVision());
+		}
+
+		rayDir = rayDir.Normalized();
+		var maxDist = GetInteractRayDistance();
+		var bestT = maxDist;
+		var bestObjectIndex = 0;
+		var bestTileFace = 0;
+		var bestTileX = 0;
+		var bestTileY = 0;
+		var bestTileHitPos = Vector3.Zero;
+		var bestPick = LaserPickKind.None;
+
+		if (TryPickClosestObjectAlongRay(rayOrigin, rayDir, maxDist, out var geoT, out var geoIndex))
+		{
+			bestT = geoT;
+			bestObjectIndex = geoIndex;
+			bestPick = LaserPickKind.Object;
+		}
+
+		if (TryPickClosestTileSurfaceAlongRay(rayOrigin, rayDir, maxDist, out var tileT, out var tileFace, out var tileX, out var tileY, out var tileHitPos))
+		{
+			if (tileT < bestT)
+			{
+				bestT = tileT;
+				bestTileFace = tileFace;
+				bestTileX = tileX;
+				bestTileY = tileY;
+				bestTileHitPos = tileHitPos;
+				bestObjectIndex = 0;
+				bestPick = LaserPickKind.Tile;
+			}
+		}
+
+		if (TryPhysicsRayPick(rayOrigin, rayDir, maxDist, out var physT, out var physIndex, out _))
+		{
+			if (physIndex > 0 && physT < bestT)
+			{
+				bestT = physT;
+				bestObjectIndex = physIndex;
+				bestPick = LaserPickKind.Object;
+			}
+		}
+
+		switch (bestPick)
+		{
+			case LaserPickKind.Object:
+				InteractWithLaserObject(bestObjectIndex, leftClick, rayOrigin + rayDir * bestT);
+				return;
+			case LaserPickKind.Tile:
+				InteractWithLaserTile(bestTileFace, bestTileX, bestTileY, bestTileHitPos, leftClick);
+				return;
+		}
+
+		if (leftClick && uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+		{
+			SayYouSeeNothing();
 		}
 	}
 
-	static bool TryGetHeadCenterObjectInfoPixel(out Vector2 texPixel)
+	enum LaserPickKind
 	{
-		texPixel = default;
-		if (_xrCamera == null || uimanager.instance?.uwsubviewport_objectinfo == null)
+		None,
+		Object,
+		Tile,
+	}
+
+	static void SayYouSeeNothing()
+	{
+		uimanager.AddToMessageScroll(GameStrings.GetString(1, GameStrings.str_you_see_nothing_));
+	}
+
+	static float GetLookVisionWorldDistance()
+	{
+		var visionTiles = VisionParams.DistanceToWallOrDarkness;
+		if (visionTiles < 0)
+		{
+			return GetInteractRayDistance();
+		}
+
+		return (visionTiles + 1) * tileMapRender.TileWidth;
+	}
+
+	static bool IsWithinLookRange(Vector3 hitPos)
+	{
+		var origin = _xrCamera?.GlobalPosition ?? Vector3.Zero;
+		return origin.DistanceTo(hitPos) <= GetLookVisionWorldDistance() + 0.05f;
+	}
+
+	static void InteractWithLaserObject(int index, bool leftClick, Vector3 hitPos)
+	{
+		var objList = UWTileMap.current_tilemap?.LevelObjects;
+		if (objList == null || index <= 0 || index >= objList.Length)
+		{
+			return;
+		}
+
+		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeLook
+			&& !IsWithinLookRange(hitPos))
+		{
+			SayYouSeeNothing();
+			return;
+		}
+
+		if (SpellCasting.currentSpell != null)
+		{
+			SpellCasting.CastCurrentSpellOnRayCastTarget(index, objList, WorldObject: true);
+			return;
+		}
+
+		uimanager.InteractWithObjectCollider(index, leftClick);
+	}
+
+	static void InteractWithLaserTile(int face, int tileX, int tileY, Vector3 hitPos, bool leftClick)
+	{
+		if (!UWTileMap.ValidTile(tileX, tileY))
+		{
+			if (leftClick && uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+			{
+				SayYouSeeNothing();
+			}
+
+			return;
+		}
+
+		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+		{
+			if (!IsWithinLookRange(hitPos))
+			{
+				SayYouSeeNothing();
+				return;
+			}
+
+			uimanager.LookAtTile(face, tileX, tileY);
+			return;
+		}
+
+		if (SpellCasting.currentSpell != null)
+		{
+			TryObjectInfoAtWorldPoint(hitPos, leftClick);
+		}
+	}
+
+	static bool TryObjectInfoAtWorldPoint(Vector3 worldPoint, bool leftClick)
+	{
+		SyncVrObjectInfoCamera();
+		if (!TryUnprojectToObjectInfoPixel(worldPoint, out var pixel))
 		{
 			return false;
 		}
 
-		var lookPoint = _xrCamera.GlobalPosition + (-_xrCamera.GlobalTransform.Basis.Z) * 2f;
-		return TryUnprojectToObjectInfoPixel(lookPoint, out texPixel);
+		uimanager.SetViewPortMouseFromObjectInfoPixel(pixel);
+		uimanager.ProcessObjectInfoPixel(pixel, leftClick);
+		return true;
 	}
 
-	static void TryInteractWorldRay(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	static bool TryPickClosestObjectAlongRay(Vector3 rayOrigin, Vector3 rayDir, float maxDist, out float bestT, out int bestIndex)
 	{
-		QueueWorldInteract(rayOrigin, rayDir, leftClick);
+		bestT = maxDist;
+		bestIndex = 0;
+
+		var objList = UWTileMap.current_tilemap?.LevelObjects;
+		if (objList == null)
+		{
+			return false;
+		}
+
+		var found = false;
+		for (var i = 1; i < objList.Length; i++)
+		{
+			var obj = objList[i];
+			if (obj == null || obj.index != i || obj.invis != 0 || obj.instance?.uwnode == null)
+			{
+				continue;
+			}
+
+			if (!IsObjectNearRay(obj, rayOrigin, rayDir, maxDist))
+			{
+				continue;
+			}
+
+			if (!TryPickObjectMeshes(obj.instance.uwnode, rayOrigin, rayDir, out var hitT))
+			{
+				continue;
+			}
+
+			if (hitT <= 0.01f || hitT >= bestT)
+			{
+				continue;
+			}
+
+			bestT = hitT;
+			bestIndex = obj.index;
+			found = true;
+		}
+
+		return found;
+	}
+
+	static bool IsObjectNearRay(uwObject obj, Vector3 rayOrigin, Vector3 rayDir, float maxDist)
+	{
+		var objPos = obj.GetCoordinate();
+		var along = (objPos - rayOrigin).Dot(rayDir);
+		if (along < 0f || along > maxDist + 1f)
+		{
+			return false;
+		}
+
+		var closest = rayOrigin + rayDir * along;
+		return closest.DistanceSquaredTo(objPos) <= 2.5f;
+	}
+
+	static bool TryPickObjectMeshes(Node3D node, Vector3 rayOrigin, Vector3 rayDir, out float bestT)
+	{
+		bestT = float.MaxValue;
+		var found = false;
+		TryPickMeshesRecursive(node, rayOrigin, rayDir, ref bestT, ref found);
+		return found;
+	}
+
+	static void TryPickMeshesRecursive(Node node, Vector3 rayOrigin, Vector3 rayDir, ref float bestT, ref bool found)
+	{
+		if (node is MeshInstance3D mesh && mesh.Visible && mesh.Mesh != null)
+		{
+			if (TryRayIntersectMesh(mesh, rayOrigin, rayDir, out var hitT) && hitT > 0.01f && hitT < bestT)
+			{
+				bestT = hitT;
+				found = true;
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			TryPickMeshesRecursive(child, rayOrigin, rayDir, ref bestT, ref found);
+		}
+	}
+
+	static bool TryRayIntersectMesh(MeshInstance3D mesh, Vector3 rayOrigin, Vector3 rayDir, out float t)
+	{
+		if (mesh.Mesh is QuadMesh quad)
+		{
+			return TryRayIntersectQuad(mesh, quad, rayOrigin, rayDir, out t);
+		}
+
+		return TryRayIntersectMeshAabb(mesh, rayOrigin, rayDir, out t);
+	}
+
+	static bool TryRayIntersectQuad(MeshInstance3D mesh, QuadMesh quad, Vector3 rayOrigin, Vector3 rayDir, out float t)
+	{
+		t = float.MaxValue;
+		var xf = mesh.GlobalTransform;
+		var planeNormal = xf.Basis.Z.Normalized();
+		var denom = planeNormal.Dot(rayDir);
+		if (Mathf.Abs(denom) < 0.000001f)
+		{
+			return false;
+		}
+
+		t = (xf.Origin - rayOrigin).Dot(planeNormal) / denom;
+		if (t <= 0.01f)
+		{
+			return false;
+		}
+
+		var hitPoint = rayOrigin + rayDir * t;
+		var local = xf.AffineInverse() * hitPoint;
+		var halfW = quad.Size.X * 0.5f;
+		var halfH = quad.Size.Y * 0.5f;
+		if (Mathf.Abs(local.X) > halfW || Mathf.Abs(local.Y) > halfH)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	static bool TryRayIntersectMeshAabb(MeshInstance3D mesh, Vector3 rayOrigin, Vector3 rayDir, out float t)
+	{
+		t = float.MaxValue;
+		var inv = mesh.GlobalTransform.AffineInverse();
+		var localOrigin = inv * rayOrigin;
+		var localDir = inv.Basis * rayDir;
+		if (localDir.LengthSquared() < 0.000001f)
+		{
+			return false;
+		}
+
+		localDir = localDir.Normalized();
+		var aabb = mesh.GetAabb();
+		if (!TryRayIntersectLocalAabb(aabb, localOrigin, localDir, out var localT))
+		{
+			return false;
+		}
+
+		var hitLocal = localOrigin + localDir * localT;
+		var hitWorld = mesh.GlobalTransform * hitLocal;
+		t = rayOrigin.DistanceTo(hitWorld);
+		return t > 0.01f;
+	}
+
+	static bool TryRayIntersectLocalAabb(Aabb aabb, Vector3 origin, Vector3 dir, out float tEnter)
+	{
+		tEnter = 0f;
+		var tExit = float.MaxValue;
+		var min = aabb.Position;
+		var max = aabb.Position + aabb.Size;
+
+		if (!TryRaySlab(origin.X, dir.X, min.X, max.X, ref tEnter, ref tExit)
+			|| !TryRaySlab(origin.Y, dir.Y, min.Y, max.Y, ref tEnter, ref tExit)
+			|| !TryRaySlab(origin.Z, dir.Z, min.Z, max.Z, ref tEnter, ref tExit))
+		{
+			return false;
+		}
+
+		return tExit >= 0f && tEnter <= tExit;
+	}
+
+	static bool TryRaySlab(float origin, float dir, float min, float max, ref float tEnter, ref float tExit)
+	{
+		if (Mathf.Abs(dir) < 0.000001f)
+		{
+			return origin >= min && origin <= max;
+		}
+
+		var invDir = 1f / dir;
+		var t0 = (min - origin) * invDir;
+		var t1 = (max - origin) * invDir;
+		if (t0 > t1)
+		{
+			(t0, t1) = (t1, t0);
+		}
+
+		tEnter = Mathf.Max(tEnter, t0);
+		tExit = Mathf.Min(tExit, t1);
+		return tEnter <= tExit;
+	}
+
+	static bool TryPickClosestTileSurfaceAlongRay(Vector3 rayOrigin, Vector3 rayDir, float maxDist, out float bestT, out int face, out int tileX, out int tileY, out Vector3 hitPos)
+	{
+		bestT = maxDist;
+		face = 0;
+		tileX = 0;
+		tileY = 0;
+		hitPos = default;
+
+		var root = tileMapRender.worldnode;
+		if (root == null)
+		{
+			return false;
+		}
+
+		var found = false;
+		foreach (var child in root.GetChildren())
+		{
+			if (child is MeshInstance3D mesh && mesh.Visible)
+			{
+				TryPickTileMesh(mesh, rayOrigin, rayDir, maxDist, ref bestT, ref face, ref tileX, ref tileY, ref hitPos, ref found);
+			}
+		}
+
+		return found;
+	}
+
+	static void TryPickTileMesh(MeshInstance3D meshInst, Vector3 rayOrigin, Vector3 rayDir, float maxDist, ref float bestT, ref int bestFace, ref int bestTileX, ref int bestTileY, ref Vector3 bestHitPos, ref bool found)
+	{
+		if (meshInst.Mesh is not ArrayMesh mesh || mesh.GetSurfaceCount() == 0)
+		{
+			return;
+		}
+
+		var inv = meshInst.GlobalTransform.AffineInverse();
+		var localOrigin = inv * rayOrigin;
+		var localDir = inv.Basis * rayDir;
+		if (localDir.LengthSquared() < 0.000001f)
+		{
+			return;
+		}
+
+		localDir = localDir.Normalized();
+		var meshAabb = mesh.GetAabb();
+		if (!TryRayIntersectLocalAabb(meshAabb, localOrigin, localDir, out _))
+		{
+			return;
+		}
+
+		for (var surface = 0; surface < mesh.GetSurfaceCount(); surface++)
+		{
+			if (mesh.SurfaceGetMaterial(surface) is not ShaderMaterial mat)
+			{
+				continue;
+			}
+
+			var tileFace = GetShaderIntParam(mat, "tileflags");
+			var surfaceTileX = GetShaderIntParam(mat, "objectindex_lowerbytes");
+			var surfaceTileY = GetShaderIntParam(mat, "objectindex_upperbytes");
+			if (tileFace == 0 && surfaceTileX == 0 && surfaceTileY == 0)
+			{
+				continue;
+			}
+
+			var arrays = mesh.SurfaceGetArrays(surface);
+			if (arrays.Count <= (int)Mesh.ArrayType.Vertex)
+			{
+				continue;
+			}
+
+			var verts = arrays[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+			if (verts.Length < 3)
+			{
+				continue;
+			}
+
+			var indices = arrays[(int)Mesh.ArrayType.Index];
+			if (indices.VariantType != Variant.Type.Nil)
+			{
+				var indexArray = indices.AsInt32Array();
+				for (var i = 0; i + 2 < indexArray.Length; i += 3)
+				{
+					TryPickTileTriangle(
+						verts[indexArray[i]], verts[indexArray[i + 1]], verts[indexArray[i + 2]],
+						meshInst.GlobalTransform, rayOrigin, rayDir, maxDist,
+						tileFace, surfaceTileX, surfaceTileY,
+						localOrigin, localDir,
+						ref bestT, ref bestFace, ref bestTileX, ref bestTileY, ref bestHitPos, ref found);
+				}
+			}
+			else
+			{
+				for (var i = 0; i + 2 < verts.Length; i += 3)
+				{
+					TryPickTileTriangle(
+						verts[i], verts[i + 1], verts[i + 2],
+						meshInst.GlobalTransform, rayOrigin, rayDir, maxDist,
+						tileFace, surfaceTileX, surfaceTileY,
+						localOrigin, localDir,
+						ref bestT, ref bestFace, ref bestTileX, ref bestTileY, ref bestHitPos, ref found);
+				}
+			}
+		}
+	}
+
+	static void TryPickTileTriangle(
+		Vector3 v0, Vector3 v1, Vector3 v2,
+		Transform3D meshTransform, Vector3 rayOrigin, Vector3 rayDir, float maxDist,
+		int tileFace, int surfaceTileX, int surfaceTileY,
+		Vector3 localOrigin, Vector3 localDir,
+		ref float bestT, ref int bestFace, ref int bestTileX, ref int bestTileY, ref Vector3 bestHitPos, ref bool found)
+	{
+		if (!TryRayIntersectTriangle(localOrigin, localDir, v0, v1, v2, out var localT))
+		{
+			return;
+		}
+
+		var localHit = localOrigin + localDir * localT;
+		var worldHit = meshTransform * localHit;
+		var worldT = rayOrigin.DistanceTo(worldHit);
+		if (worldT <= 0.01f || worldT >= bestT || worldT > maxDist)
+		{
+			return;
+		}
+
+		bestT = worldT;
+		bestFace = tileFace;
+		bestTileX = surfaceTileX;
+		bestTileY = surfaceTileY;
+		bestHitPos = worldHit;
+		found = true;
+	}
+
+	static int GetShaderIntParam(ShaderMaterial mat, string name)
+	{
+		var value = mat.GetShaderParameter(name);
+		if (value.VariantType == Variant.Type.Int)
+		{
+			return value.AsInt32();
+		}
+
+		if (value.VariantType == Variant.Type.Float)
+		{
+			return (int)value.AsDouble();
+		}
+
+		return 0;
+	}
+
+	static bool TryRayIntersectTriangle(Vector3 origin, Vector3 dir, Vector3 v0, Vector3 v1, Vector3 v2, out float t)
+	{
+		t = float.MaxValue;
+		var edge1 = v1 - v0;
+		var edge2 = v2 - v0;
+		var pvec = dir.Cross(edge2);
+		var det = edge1.Dot(pvec);
+		if (Mathf.Abs(det) < 0.000001f)
+		{
+			return false;
+		}
+
+		var invDet = 1f / det;
+		var tvec = origin - v0;
+		var u = tvec.Dot(pvec) * invDet;
+		if (u < 0f || u > 1f)
+		{
+			return false;
+		}
+
+		var qvec = tvec.Cross(edge1);
+		var v = dir.Dot(qvec) * invDet;
+		if (v < 0f || u + v > 1f)
+		{
+			return false;
+		}
+
+		t = edge2.Dot(qvec) * invDet;
+		return t > 0.0001f;
+	}
+
+	static bool TryPhysicsRayPick(Vector3 rayOrigin, Vector3 rayDir, float maxDist, out float t, out int objectIndex, out Vector3 hitPos)
+	{
+		t = maxDist;
+		objectIndex = 0;
+		hitPos = default;
+		if (_gameRoot == null)
+		{
+			return false;
+		}
+
+		var to = rayOrigin + rayDir * maxDist;
+		var query = PhysicsRayQueryParameters3D.Create(rayOrigin, to);
+		query.CollideWithAreas = true;
+		query.CollideWithBodies = true;
+		query.CollisionMask = uint.MaxValue;
+		var result = _gameRoot.GetWorld3D().DirectSpaceState.IntersectRay(query);
+		if (result.Count == 0 || !result.ContainsKey("collider"))
+		{
+			return false;
+		}
+
+		hitPos = result.ContainsKey("position") ? result["position"].AsVector3() : to;
+		t = rayOrigin.DistanceTo(hitPos);
+
+		if (result["collider"].AsGodotObject() is not Node node)
+		{
+			return true;
+		}
+
+		while (node != null)
+		{
+			if (TryGetObjectIndex(node.Name, out var index))
+			{
+				objectIndex = index;
+				break;
+			}
+
+			node = node.GetParent();
+		}
+
+		return true;
 	}
 
 	static Vector3 GetControllerRayDir()
@@ -1715,6 +2262,11 @@ public static class VrController
 		return true;
 	}
 
+	static bool ShouldUseHudMenuPointerOnly()
+	{
+		return uimanager.blockinput;
+	}
+
 	static void ApplyHudPointerInput()
 	{
 		IsHud3DViewportHovering = false;
@@ -1735,21 +2287,42 @@ public static class VrController
 
 		if (!_hudPanelVisible)
 		{
-			_hudPointerHovering = false;
-			_hudPointerLeftWasPressed = false;
-			_hudPointerRightWasPressed = false;
-			return;
+			if (ShouldUseHudMenuPointerOnly())
+			{
+				SetHudPanelVisible(true);
+			}
+			else
+			{
+				_hudPointerHovering = false;
+				_hudPointerLeftWasPressed = false;
+				_hudPointerRightWasPressed = false;
+				UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+				return;
+			}
 		}
 
 		var rayOrigin = _rightController.GlobalPosition;
-		var rayDir = -_rightController.GlobalTransform.Basis.Z;
-		if (rayDir.LengthSquared() < 0.0001f)
-		{
-			rayDir = -_rightController.GlobalTransform.Basis.Y;
-		}
-		rayDir = rayDir.Normalized();
-
+		var rayDir = GetControllerRayDir();
+		var menuOnly = ShouldUseHudMenuPointerOnly();
 		var hovering = TryGetHudPanelHit(rayOrigin, rayDir, out var viewportPos, out var hitWorld);
+
+		if (menuOnly && !hovering)
+		{
+			// Don't extend the laser into the world during conversations/menus.
+			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * 0.2f, visible: true);
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			_lastHudPointerPos = new Vector2(-1f, -1f);
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = false;
+			}
+
+			uimanager.CursorOverMessageScroll = false;
+			return;
+		}
+
 		var laserEnd = hovering ? hitWorld : rayOrigin + rayDir * HudPointerMaxDistance;
 		UpdatePointerLaser(rayOrigin, laserEnd, visible: true);
 
@@ -1776,55 +2349,154 @@ public static class VrController
 		}
 
 		_hudPointerHovering = hovering;
+		UpdateConversationScrollHover(viewportPos, hovering);
 
-		if (hovering)
-		{
-			var in3dViewport = TryMapToUwViewport(viewportPos, out var uwLocal);
-			if (in3dViewport)
-			{
-				IsHud3DViewportHovering = true;
-				uimanager.SetViewPortMouseFromUwLocal(uwLocal);
-
-				var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
-				if (leftPressed && !_hudPointerLeftWasPressed)
-				{
-					uimanager.TriggerViewPortClick(uwLocal, leftClick: true);
-				}
-				_hudPointerLeftWasPressed = leftPressed;
-
-				var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
-				if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
-				{
-					IsHud3DViewportRightHeld = rightPressed;
-				}
-				else if (rightPressed && !_hudPointerRightWasPressed)
-				{
-					uimanager.TriggerViewPortClick(uwLocal, leftClick: false);
-				}
-				_hudPointerRightWasPressed = rightPressed;
-			}
-			else
-			{
-				var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
-				if (leftPressed && !_hudPointerLeftWasPressed)
-				{
-					PushHudMouseClick(viewportPos, MouseButton.Left);
-				}
-				_hudPointerLeftWasPressed = leftPressed;
-
-				var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
-				if (rightPressed && !_hudPointerRightWasPressed)
-				{
-					PushHudMouseClick(viewportPos, MouseButton.Right);
-				}
-				_hudPointerRightWasPressed = rightPressed;
-			}
-		}
-		else
+		if (!hovering)
 		{
 			_hudPointerLeftWasPressed = false;
 			_hudPointerRightWasPressed = false;
+			return;
 		}
+
+		if (menuOnly)
+		{
+			ApplyHudMenuPointerClicks(viewportPos);
+			return;
+		}
+
+		var in3dViewport = TryMapToUwViewport(viewportPos, out var uwLocal);
+		if (in3dViewport)
+		{
+			IsHud3DViewportHovering = true;
+			uimanager.SetViewPortMouseFromUwLocal(uwLocal);
+
+			var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+			if (leftPressed && !_hudPointerLeftWasPressed)
+			{
+				SyncVrObjectInfoCamera();
+				uimanager.TriggerViewPortClick(uwLocal, leftClick: true);
+			}
+			_hudPointerLeftWasPressed = leftPressed;
+
+			var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+			if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
+			{
+				IsHud3DViewportRightHeld = rightPressed;
+			}
+			else if (rightPressed && !_hudPointerRightWasPressed)
+			{
+				SyncVrObjectInfoCamera();
+				uimanager.TriggerViewPortClick(uwLocal, leftClick: false);
+			}
+			_hudPointerRightWasPressed = rightPressed;
+		}
+		else
+		{
+			ApplyHudMenuPointerClicks(viewportPos);
+		}
+	}
+
+	static void ApplyHudMenuPointerClicks(Vector2 viewportPos)
+	{
+		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+		if (leftPressed && !_hudPointerLeftWasPressed)
+		{
+			if (!TryDismissMessageMore()
+				&& !TrySelectConversationOption(viewportPos))
+			{
+				PushHudMouseClick(viewportPos, MouseButton.Left);
+			}
+		}
+		_hudPointerLeftWasPressed = leftPressed;
+
+		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+		if (rightPressed && !_hudPointerRightWasPressed)
+		{
+			if (!TryDismissMessageMore()
+				&& !TrySelectConversationOption(viewportPos))
+			{
+				PushHudMouseClick(viewportPos, MouseButton.Right);
+			}
+		}
+		_hudPointerRightWasPressed = rightPressed;
+	}
+
+	static bool TryDismissMessageMore()
+	{
+		if (!MessageDisplay.WaitingForMore)
+		{
+			return false;
+		}
+
+		MessageDisplay.WaitingForMore = false;
+		return true;
+	}
+
+	static void UpdateConversationScrollHover(Vector2 hudViewportPos, bool hoveringHud)
+	{
+		if (!uimanager.InConversation || !ConversationVM.WaitingForInput)
+		{
+			uimanager.CursorOverMessageScroll = false;
+			return;
+		}
+
+		uimanager.CursorOverMessageScroll = hoveringHud && IsHudPointOverMessageScroll(hudViewportPos);
+	}
+
+	static bool IsHudPointOverMessageScroll(Vector2 hudViewportPos)
+	{
+		var scroll = uimanager.MessageScroll;
+		if (scroll == null)
+		{
+			return false;
+		}
+
+		var rect = new Rect2(scroll.Position, scroll.Size);
+		return rect.HasPoint(hudViewportPos);
+	}
+
+	static bool TrySelectConversationOption(Vector2 hudViewportPos)
+	{
+		if (!uimanager.InConversation || !ConversationVM.WaitingForInput || uimanager.MessageScrollIsTemporary)
+		{
+			return false;
+		}
+
+		var scroll = uimanager.MessageScroll;
+		if (scroll == null)
+		{
+			return false;
+		}
+
+		var localClick = hudViewportPos - scroll.Position;
+		if (localClick.X < 0f || localClick.Y < 0f
+			|| localClick.X > scroll.Size.X || localClick.Y > scroll.Size.Y)
+		{
+			return false;
+		}
+
+		var lineCount = Math.Max(1, scroll.GetLineCount());
+		var lineHeight = scroll.Size.Y / lineCount;
+		if (lineHeight <= 0f)
+		{
+			return false;
+		}
+
+		var clickedLine = (int)(localClick.Y / lineHeight);
+		if (clickedLine < 0 || clickedLine >= lineCount)
+		{
+			return false;
+		}
+
+		var result = clickedLine + 1;
+		if (result <= 0 || result > ConversationVM.MaxAnswer)
+		{
+			return false;
+		}
+
+		ConversationVM.PlayerNumericAnswer = result;
+		ConversationVM.WaitingForInput = false;
+		return true;
 	}
 
 	static bool TryMapToUwViewport(Vector2 hudViewportPos, out Vector2 uwLocal)

@@ -561,7 +561,7 @@ namespace Underworld
         /// <param name="normal"></param>
         /// <param name="tileX"></param>
         /// <param name="tileY"></param>
-        private static void LookAtTile(int face, int tileX, int tileY)
+        public static void LookAtTile(int face, int tileX, int tileY)
         {
             AddToMessageScroll(
                 GameStrings.GetString(1, GameStrings.str_you_see_)

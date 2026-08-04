@@ -271,6 +271,16 @@ namespace Underworld
         }
 
         /// <summary>
+        /// Applies an object sprite to an inventory TextureRect with palette shader and nearest filtering.
+        /// </summary>
+        static void ApplyInventorySprite(TextureRect rect, int spriteNo)
+        {
+            rect.Texture = grObjects.LoadImageAt(spriteNo);
+            rect.Material = grObjects.GetMaterial(spriteNo);
+            rect.TextureFilter = TextureFilterEnum.Nearest;
+        }
+
+        /// <summary>
         /// Sets the sprite in the right shoulder
         /// </summary>
         /// <param name="SpriteNo"></param>
@@ -282,8 +292,7 @@ namespace Underworld
             }
             else
             {
-                instance.RightShoulder.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.RightShoulder.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.RightShoulder, SpriteNo);
             }
             var pQty = "";
             if (qty > 1)
@@ -306,8 +315,7 @@ namespace Underworld
             }
             else
             {
-                instance.LeftShoulder.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.LeftShoulder.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.LeftShoulder, SpriteNo);
             }
             var pQty = "";
             if (qty > 1)
@@ -330,8 +338,7 @@ namespace Underworld
             }
             else
             {
-                instance.RightHand.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.RightHand.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.RightHand, SpriteNo);
             }
             var pQty = "";
             if (qty > 1)
@@ -354,8 +361,7 @@ namespace Underworld
             }
             else
             {
-                instance.LeftHand.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.LeftHand.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.LeftHand, SpriteNo);
             }
             var pQty = "";
             if (qty > 1)
@@ -378,8 +384,7 @@ namespace Underworld
             }
             else
             {
-                instance.RightRing.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.RightRing.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.RightRing, SpriteNo);
             }
         }
 
@@ -396,8 +401,7 @@ namespace Underworld
             }
             else
             {
-                instance.LeftRing.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.LeftRing.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.LeftRing, SpriteNo);
             }
         }
 
@@ -414,8 +418,7 @@ namespace Underworld
             }
             else
             {
-                instance.Backpack[slot].Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.Backpack[slot].Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.Backpack[slot], SpriteNo);
             }
 
             //Set the qty label
@@ -445,8 +448,7 @@ namespace Underworld
             else
             {
                 EnableDisable(instance.OpenedContainer, true);
-                instance.OpenedContainer.Texture = grObjects.LoadImageAt(SpriteNo);
-                instance.OpenedContainer.Material = grObjects.GetMaterial(SpriteNo);
+                ApplyInventorySprite(instance.OpenedContainer, SpriteNo);
                 EnableDisable(instance.BackpackBG,true);
             }
         }

@@ -53,6 +53,7 @@ namespace Underworld
                     TeleportTileY = -1;
 
                     SetupConversationUI(talker);
+                    VrController.OnConversationStarted();
 
                     if (_RES != GAME_UW2)
                         {

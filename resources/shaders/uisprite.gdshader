@@ -28,7 +28,7 @@ void vertex() {
 
 
 void fragment(){
-  vec4 rgba = texture(TEXTURE, UV); //read from texture  
-  vec4 finalcolour = texture(uipalette, vec2(rgba.r ,0));
+  vec4 rgba = texture(TEXTURE, UV);
+  vec4 finalcolour = texture(uipalette, vec2(rgba.r, 0.0));
   COLOR.rgba = finalcolour.rgba;
 }
