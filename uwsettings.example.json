@@ -9,5 +9,9 @@
     "shader" : "UWSHADER",
     "FOV" : 75.0,
     "showcolliders" : true,
-    "shaderbandsize" : 8
+    "shaderbandsize" : 8,
+    "vr": false,
+    "vr_boot_mode": "explore",
+    "vr_menu_screen_width": 2.4,
+    "datafolder": "DATA"
 }

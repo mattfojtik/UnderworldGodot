@@ -81,6 +81,17 @@ public class uwsettings
     public int level { get; set; } = 0;
     /// <summary>When true, start in OpenXR VR mode with head tracking and thumbstick movement.</summary>
     public bool vr { get; set; } = false;
+    /// <summary>
+    /// VR boot path. "explore" loads straight into a level (default avatar when datafolder is DATA).
+    /// "full" runs the flat intro, main menu, character creation, and save selection on a VR menu screen.
+    /// </summary>
+    public string vr_boot_mode { get; set; } = "explore";
+    /// <summary>Width of the front-menu TV quad in metres (vr_boot_mode "full").</summary>
+    public float vr_menu_screen_width { get; set; } = 2.4f;
+    public bool VrBootExplore =>
+        !vr_boot_mode.Equals("full", StringComparison.OrdinalIgnoreCase);
+    public bool VrBootFull =>
+        vr_boot_mode.Equals("full", StringComparison.OrdinalIgnoreCase);
     /// <summary>Flip thumbstick forward/back if walk direction feels reversed (common on Quest Link).</summary>
     public bool vr_invert_stick_y { get; set; } = false;
     /// <summary>DATA or SAVE0..SAVE4 — used when vr skips menus and loads straight into a level.</summary>

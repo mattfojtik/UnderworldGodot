@@ -338,13 +338,7 @@ namespace Underworld
 
             playerdat.PlayerStatusUpdate();
 
-            if (uwsettings.instance.vr && VrController.IsActive)
-            {
-                playerdat.PositionPlayerCamera();
-                VrController.ResetXrOriginFloorTracking();
-                VrController.InitializeMotionStep();
-                VrController.SnapRoomOriginToAvatar();
-            }
+            // VR origin sync runs after JourneyOnwards teleports the player (not here).
 
             Debug.Print($"{current_tilemap.uw}");
 

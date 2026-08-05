@@ -70,6 +70,32 @@
             "default": 8
         },
 
+        "vr": {
+            "description": "When true, start in OpenXR VR mode with head tracking and thumbstick movement.",
+            "type": "boolean",
+            "default": false
+        },
+
+        "vr_boot_mode": {
+            "description": "VR boot path. explore = load straight into a level; full = intro cutscene, main menu, and character creation on a VR menu screen.",
+            "type": "string",
+            "enum": ["explore", "full"],
+            "default": "explore"
+        },
+
+        "datafolder": {
+            "description": "Save slot used when vr_boot_mode is explore (DATA or SAVE1..SAVE4).",
+            "type": "string",
+            "default": "DATA",
+            "enum": ["DATA", "SAVE1", "SAVE2", "SAVE3", "SAVE4"]
+        },
+
+        "vr_menu_screen_width": {
+            "description": "Width of the front-menu TV quad in metres (vr_boot_mode full).",
+            "type": "number",
+            "default": 2.4
+        },
+
         "synth": {
             "description": "Music synthesizer engine. 'cm32l' and 'mt32' use mt32emu (require ROM files). 'soundfont' uses a SoundFont (SF2) file. 'opl' uses AdLib/OPL FM synthesis.",
             "type": "string",

@@ -11,6 +11,9 @@ public static class VrController
 {
 	public static bool IsActive { get; private set; }
 
+	/// <summary>True while intro/menu/chargen UI is shown on the front VR menu screen.</summary>
+	public static bool UsesFrontMenuScreen => IsHudOnMenuScreen();
+
 	/// <summary>Native VR: OpenXR head pose replaces DOS camera bob on the flat gimbals.</summary>
 	public static bool SuppressFlatCameraBob =>
 		IsActive && !uwsettings.instance.vr_mirror;
@@ -41,6 +44,10 @@ public static class VrController
 	static SubViewport _hudViewport;
 	static MeshInstance3D _hudPanel;
 	static CanvasLayer _hudMouseLayer;
+	static bool _vrUiOnMenuTv;
+	static bool _vrGameplayEnterPending;
+	static bool _vrShortcutTriggerWasPressed;
+	static bool _vrEscapeWasPressed;
 	static MeshInstance3D _pointerLaser;
 	static CylinderMesh _pointerLaserMesh;
 	static bool _hudPanelVisible = true;
@@ -88,6 +95,9 @@ public static class VrController
 	const float BodyMarkerScale = 0.1f;
 	const float DoorUseCooldownSeconds = 0.35f;
 	const float HudPointerMaxDistance = 2.5f;
+	const float MenuTvPointerMaxDistance = 4f;
+	/// <summary>Menu TV attached to XRCamera (head-locked cinema), like VrMirrorScreen.</summary>
+	static readonly Vector3 MenuTvCameraLocalPosition = new(0f, 0f, -2.2f);
 	const float PointerLaserRadius = 0.0025f;
 	const int HudPanelWidthPx = 1280;
 	const int HudPanelHeightPx = 800;
@@ -641,7 +651,10 @@ public static class VrController
 			return false;
 		}
 
-		return uimanager.InGame || uimanager.InConversation || uimanager.InAutomap;
+		return uimanager.InGame || uimanager.InConversation || uimanager.InAutomap
+			|| uimanager.AtMainMenu
+			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE
+			|| uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS;
 	}
 
 	/// <summary>VR pointer/attack input — runs in _Process so combat reads grip on the same frame.</summary>
@@ -654,6 +667,7 @@ public static class VrController
 
 		ApplyHudPointerInput();
 		ApplyWorldPointerInput();
+		ApplyVrShortcutInput();
 		ApplyDoorInteraction();
 	}
 
@@ -795,8 +809,15 @@ public static class VrController
 		EnsureBodyMarker(underworld);
 		if (!uwsettings.instance.vr_mirror)
 		{
-			SetupHudHandPanel(underworld);
 			EnsurePointerLaser(underworld);
+			if (UsesFrontMenuBoot() && !uimanager.InGame)
+			{
+				SetupMenuTvScreen(underworld);
+			}
+			else if (uwsettings.instance.vr_hud_panel)
+			{
+				SetupHudHandPanel(underworld);
+			}
 		}
 		playerdat.RefreshLighting();
 		ResetXrOriginFloorTracking();
@@ -833,10 +854,8 @@ public static class VrController
 		rootViewport.UseXR = true;
 
 		_openXrOutputEnabled = true;
-		// Flat composites via canvas_item; native XR draws 3D directly. HDR 2D on the root
-		// viewport (project default is on) darkens unshaded palette output on the mobile renderer.
-		rootViewport.UseHdr2D = false;
-		GD.Print($"[VR] OpenXR output enabled. UseXR={rootViewport.UseXR} UseHdr2D={rootViewport.UseHdr2D} XRCamera path={_xrCamera.GetPath()} Current={_xrCamera.Current}");
+		UpdateXrViewportHdrForUiMode();
+		GD.Print($"[VR] OpenXR output enabled. UseXR={rootViewport.UseXR} UseHdr2D={rootViewport.UseHdr2D} menuTv={_vrUiOnMenuTv} XRCamera path={_xrCamera.GetPath()} Current={_xrCamera.Current}");
 	}
 
 	static void SetupNativeWorldCamera()
@@ -908,18 +927,14 @@ public static class VrController
 	/// Render the existing 1280×800 CanvasLayer HUD into a SubViewport and show it
 	/// on a quad attached to the left controller (ViveCraft-style).
 	/// </summary>
-	static void SetupHudHandPanel(Node3D underworld)
-	{
-		if (!uwsettings.instance.vr_hud_panel || _leftController == null || _hudPanel != null)
-		{
-			return;
-		}
+	static bool UsesFrontMenuBoot() =>
+		uwsettings.instance.vr && uwsettings.instance.VrBootFull;
 
-		var ui = underworld.GetNodeOrNull<CanvasLayer>("UI");
-		if (ui == null)
+	static bool EnsureVrUiViewport(Node3D underworld, CanvasLayer ui)
+	{
+		if (_hudViewport != null)
 		{
-			GD.PushWarning("[VR] HUD panel: UI CanvasLayer not found.");
-			return;
+			return true;
 		}
 
 		_hudViewport = new SubViewport
@@ -940,11 +955,155 @@ public static class VrController
 		ui.GetParent()?.RemoveChild(ui);
 		_hudViewport.AddChild(ui);
 
-		// Shown while the right-hand laser points at the panel.
 		_hudMouseLayer = ui.GetNodeOrNull<CanvasLayer>("mouse");
 		if (_hudMouseLayer != null)
 		{
 			_hudMouseLayer.Visible = false;
+		}
+
+		return true;
+	}
+
+	static StandardMaterial3D CreateVrUiQuadMaterial()
+	{
+		return new StandardMaterial3D
+		{
+			AlbedoTexture = _hudViewport.GetTexture(),
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			DisableReceiveShadows = true,
+		};
+	}
+
+	static void UpdateXrViewportHdrForUiMode()
+	{
+		if (_sceneTree?.Root?.GetViewport() is not Viewport rootVp || !rootVp.UseXR)
+		{
+			return;
+		}
+
+		// 2D UI-on-quad needs hdr_2d in XR; native dungeon pass disables it (lighting fix).
+		rootVp.UseHdr2D = _vrUiOnMenuTv;
+	}
+
+	static void RefreshVrUiQuadMaterial()
+	{
+		if (_hudViewport == null || _hudPanel?.Mesh is not QuadMesh quad)
+		{
+			return;
+		}
+
+		if (quad.Material is StandardMaterial3D mat)
+		{
+			mat.AlbedoTexture = _hudViewport.GetTexture();
+		}
+	}
+
+	static void ResizeVrUiQuad(Vector2 size)
+	{
+		if (_hudPanel?.Mesh is QuadMesh quad)
+		{
+			quad.Size = size;
+		}
+	}
+
+	/// <summary>Intro, main menu, and chargen on a large screen in front of the player.</summary>
+	static void SetupMenuTvScreen(Node3D underworld)
+	{
+		if (_xrCamera == null)
+		{
+			GD.PushWarning("[VR] Menu TV: XRCamera missing.");
+			return;
+		}
+
+		var ui = underworld.GetNodeOrNull<CanvasLayer>("UI");
+		if (ui == null)
+		{
+			GD.PushWarning("[VR] Menu TV: UI CanvasLayer not found.");
+			return;
+		}
+
+		if (!EnsureVrUiViewport(underworld, ui))
+		{
+			return;
+		}
+
+		var width = uwsettings.instance.vr_menu_screen_width;
+		if (width <= 0.5f)
+		{
+			width = 2.4f;
+		}
+
+		var aspect = (float)HudPanelHeightPx / HudPanelWidthPx;
+		if (_hudPanel == null)
+		{
+			_hudPanel = new MeshInstance3D
+			{
+				Name = "VrMenuTvScreen",
+				Mesh = new QuadMesh
+				{
+					Size = new Vector2(width, width * aspect),
+					Material = CreateVrUiQuadMaterial(),
+				},
+				CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+				Layers = main.LayerGeo | main.LayerXFER,
+			};
+		}
+		else
+		{
+			_hudPanel.GetParent()?.RemoveChild(_hudPanel);
+			ResizeVrUiQuad(new Vector2(width, width * aspect));
+			if (_hudPanel.Mesh is QuadMesh quad)
+			{
+				quad.Material = CreateVrUiQuadMaterial();
+			}
+		}
+
+		// Head-locked cinema screen (same attachment pattern as VrMirrorScreen).
+		_hudPanel.Position = MenuTvCameraLocalPosition;
+		_hudPanel.RotationDegrees = Vector3.Zero;
+		_xrCamera.AddChild(_hudPanel);
+		_vrUiOnMenuTv = true;
+		_hudPanelVisible = true;
+		_hudPanel.Visible = true;
+		UpdateXrViewportHdrForUiMode();
+		_hudViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+		if (_sceneTree != null)
+		{
+			_sceneTree.ProcessFrame += OnMenuTvFirstFrame;
+		}
+
+		GD.Print($"[VR] Menu TV screen attached to XRCamera ({width:F2}m wide, {HudPanelWidthPx}x{HudPanelHeightPx}).");
+	}
+
+	static void OnMenuTvFirstFrame()
+	{
+		if (_sceneTree != null)
+		{
+			_sceneTree.ProcessFrame -= OnMenuTvFirstFrame;
+		}
+
+		RefreshVrUiQuadMaterial();
+		if (!_openXrOutputEnabled)
+		{
+			TryEnableOpenXrOutput();
+		}
+	}
+
+	static void TransitionMenuTvToHandHud()
+	{
+		if (_hudPanel == null)
+		{
+			_vrUiOnMenuTv = false;
+			UpdateXrViewportHdrForUiMode();
+			return;
+		}
+
+		if (_leftController == null)
+		{
+			GD.PushWarning("[VR] Menu TV → hand HUD deferred: left controller not ready.");
+			return;
 		}
 
 		var width = uwsettings.instance.vr_hud_panel_width;
@@ -954,22 +1113,245 @@ public static class VrController
 		}
 
 		var aspect = (float)HudPanelHeightPx / HudPanelWidthPx;
-		var material = new StandardMaterial3D
+		_hudPanel.GetParent()?.RemoveChild(_hudPanel);
+		_hudPanel.Name = "VrHudPanel";
+		ResizeVrUiQuad(new Vector2(width, width * aspect));
+		if (_hudPanel.Mesh is QuadMesh quad)
 		{
-			AlbedoTexture = _hudViewport.GetTexture(),
-			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-			TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-			DisableReceiveShadows = true,
-		};
+			quad.Material = CreateVrUiQuadMaterial();
+		}
 
+		_hudPanel.Position = HudPanelLocalPosition;
+		_hudPanel.RotationDegrees = HudPanelLocalRotationDegrees;
+		_leftController.AddChild(_hudPanel);
+		_vrUiOnMenuTv = false;
+		UpdateXrViewportHdrForUiMode();
+		RefreshVrUiQuadMaterial();
+		SetHudPanelVisible(true);
+		GD.Print($"[VR] Menu TV → hand HUD ({width:F2}m wide).");
+	}
+
+	static bool IsHudOnMenuScreen()
+	{
+		if (_hudPanel == null)
+		{
+			return _vrUiOnMenuTv;
+		}
+
+		var parent = _hudPanel.GetParent();
+		return _vrUiOnMenuTv || parent == _xrCamera || parent == _xrOrigin;
+	}
+
+	static void EnsureVrGameplayHud()
+	{
+		if (!uwsettings.instance.vr_hud_panel || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld == null)
+		{
+			return;
+		}
+
+		var ui = underworld.GetNodeOrNull<CanvasLayer>("UI");
+		if (ui != null)
+		{
+			EnsureVrUiViewport(underworld, ui);
+		}
+
+		if (_hudPanel == null)
+		{
+			SetupHudHandPanel(underworld);
+			return;
+		}
+
+		if (IsHudOnMenuScreen())
+		{
+			TransitionMenuTvToHandHud();
+		}
+	}
+
+	static void RefreshVrWorldPresentation()
+	{
+		if (uwsettings.instance.vr_mirror || _xrCamera == null)
+		{
+			return;
+		}
+
+		_xrCamera.Current = true;
+		RenderingServer.GlobalShaderParameterSet("final_color_pass", true);
+		shade.UpdateShaderShadeUniforms(playerdat.lightlevel);
+		PaletteLoader.UpdateSmoothPaletteForLighting();
+		UpdateXrViewportHdrForUiMode();
+		EnsureVrTilemapScale(_gameRoot);
+
+		if (main.instance?.lblPositionDebug != null)
+		{
+			var showDebug = uwsettings.instance.vr_light_debug;
+			uimanager.EnableDisable(main.instance.lblPositionDebug, showDebug);
+		}
+	}
+
+	/// <summary>Call when a full-boot VR session enters gameplay (after JourneyOnwards).</summary>
+	public static void OnEnteringVrGameplay()
+	{
+		if (!uwsettings.instance.vr || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		_vrGameplayEnterPending = true;
+		if (_sceneTree != null)
+		{
+			_sceneTree.ProcessFrame += FinishEnteringVrGameplayDeferred;
+		}
+		else
+		{
+			FinishEnteringVrGameplay();
+		}
+	}
+
+	static void FinishEnteringVrGameplayDeferred()
+	{
+		if (_sceneTree != null)
+		{
+			_sceneTree.ProcessFrame -= FinishEnteringVrGameplayDeferred;
+		}
+
+		FinishEnteringVrGameplay();
+	}
+
+	static void FinishEnteringVrGameplay()
+	{
+		_vrGameplayEnterPending = false;
+		EnsureVrGameplayHud();
+		RefreshVrWorldPresentation();
+		playerdat.RefreshLighting();
+		ResetXrOriginFloorTracking();
+		playerdat.PositionPlayerCamera();
+		InitializeMotionStep();
+		SnapRoomOriginToAvatar();
+		uimanager.UpdateInventoryDisplay();
+		TryEnableOpenXrOutput();
+		GD.Print("[VR] Gameplay presentation ready (hand HUD, world lighting, origin snapped).");
+	}
+
+	static void ApplyVrShortcutInput()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror)
+		{
+			_vrShortcutTriggerWasPressed = false;
+			_vrEscapeWasPressed = false;
+			return;
+		}
+
+		if (_rightController != null)
+		{
+			var advance = IsButtonPressed(_rightController, HudLeftClickActions);
+			if (advance && !_vrShortcutTriggerWasPressed)
+			{
+				if (MessageDisplay.WaitingForMore)
+				{
+					MessageDisplay.WaitingForMore = false;
+				}
+			}
+
+			_vrShortcutTriggerWasPressed = advance;
+		}
+		else
+		{
+			_vrShortcutTriggerWasPressed = false;
+		}
+
+		if (_leftController != null)
+		{
+			var escape = IsButtonPressed(_leftController, DoorUseButtonActions);
+			if (escape && !_vrEscapeWasPressed)
+			{
+				ApplyVrEscapeAction();
+			}
+
+			_vrEscapeWasPressed = escape;
+		}
+		else
+		{
+			_vrEscapeWasPressed = false;
+		}
+	}
+
+	static void ApplyVrEscapeAction()
+	{
+		switch (uimanager.CurrentGameMode)
+		{
+			case uimanager.GameModes.CUTSCENE:
+				if (cutsplayer.IsPlaying)
+				{
+					cutsplayer.StopCutscene();
+					GD.Print("[VR] Cutscene skip (left grip = Escape).");
+				}
+
+				break;
+			case uimanager.GameModes.CHARGEN:
+			case uimanager.GameModes.JOURNEY:
+				uimanager.instance?.HandleFrontMenuEscape();
+				GD.Print("[VR] Front menu back (left grip = Escape).");
+				break;
+			case uimanager.GameModes.GAME:
+				if (cutsplayer.IsPlaying)
+				{
+					cutsplayer.StopCutscene();
+				}
+
+				break;
+		}
+	}
+
+	static void SetupHudHandPanel(Node3D underworld)
+	{
+		if (!uwsettings.instance.vr_hud_panel || _leftController == null)
+		{
+			return;
+		}
+
+		if (_vrUiOnMenuTv)
+		{
+			TransitionMenuTvToHandHud();
+			return;
+		}
+
+		if (_hudPanel != null)
+		{
+			return;
+		}
+
+		var ui = underworld.GetNodeOrNull<CanvasLayer>("UI");
+		if (ui == null)
+		{
+			GD.PushWarning("[VR] HUD panel: UI CanvasLayer not found.");
+			return;
+		}
+
+		if (!EnsureVrUiViewport(underworld, ui))
+		{
+			return;
+		}
+
+		var width = uwsettings.instance.vr_hud_panel_width;
+		if (width <= 0.05f)
+		{
+			width = 0.42f;
+		}
+
+		var aspect = (float)HudPanelHeightPx / HudPanelWidthPx;
 		_hudPanel = new MeshInstance3D
 		{
 			Name = "VrHudPanel",
 			Mesh = new QuadMesh
 			{
 				Size = new Vector2(width, width * aspect),
-				Material = material,
+				Material = CreateVrUiQuadMaterial(),
 			},
 			Position = HudPanelLocalPosition,
 			RotationDegrees = HudPanelLocalRotationDegrees,
@@ -1005,7 +1387,7 @@ public static class VrController
 
 	static void ApplyHudMenuToggleInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null)
+		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null || IsHudOnMenuScreen())
 		{
 			_hudMenuToggleWasPressed = false;
 			return;
@@ -1407,7 +1789,7 @@ public static class VrController
 
 	public static void ApplyMotionInputs()
 	{
-		if (!IsActive || _leftController == null)
+		if (!IsActive || _leftController == null || !uimanager.InGame)
 		{
 			return;
 		}
@@ -1716,6 +2098,13 @@ public static class VrController
 		IsVrWorldRightHeld = false;
 
 		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null || _xrCamera == null)
+		{
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+			return;
+		}
+
+		if (IsHudOnMenuScreen() || !uimanager.InGame)
 		{
 			_worldPointerLeftWasPressed = false;
 			_worldPointerRightWasPressed = false;
@@ -2426,7 +2815,8 @@ public static class VrController
 
 	static bool ShouldUseHudMenuPointerOnly()
 	{
-		return uimanager.blockinput;
+		return uimanager.blockinput || IsHudOnMenuScreen() || uimanager.AtMainMenu
+			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE;
 	}
 
 	static void ApplyHudPointerInput()
@@ -2447,7 +2837,8 @@ public static class VrController
 			return;
 		}
 
-		if (!_hudPanelVisible)
+		var menuScreen = IsHudOnMenuScreen();
+		if (!menuScreen && !_hudPanelVisible)
 		{
 			if (ShouldUseHudMenuPointerOnly())
 			{
@@ -2466,7 +2857,8 @@ public static class VrController
 		var rayOrigin = _rightController.GlobalPosition;
 		var rayDir = GetControllerRayDir();
 		var menuOnly = ShouldUseHudMenuPointerOnly();
-		var hovering = TryGetHudPanelHit(rayOrigin, rayDir, out var viewportPos, out var hitWorld);
+		var pointerMaxDistance = menuScreen ? MenuTvPointerMaxDistance : HudPointerMaxDistance;
+		var hovering = TryGetHudPanelHit(rayOrigin, rayDir, pointerMaxDistance, out var viewportPos, out var hitWorld);
 
 		if (menuOnly && !hovering)
 		{
@@ -2485,7 +2877,7 @@ public static class VrController
 			return;
 		}
 
-		var laserEnd = hovering ? hitWorld : rayOrigin + rayDir * HudPointerMaxDistance;
+		var laserEnd = hovering ? hitWorld : rayOrigin + rayDir * pointerMaxDistance;
 		UpdatePointerLaser(rayOrigin, laserEnd, visible: true);
 
 		if (hovering)
@@ -2520,7 +2912,7 @@ public static class VrController
 			return;
 		}
 
-		if (menuOnly)
+		if (menuOnly || menuScreen)
 		{
 			ApplyHudMenuPointerClicks(viewportPos);
 			return;
@@ -2688,10 +3080,10 @@ public static class VrController
 			&& uwLocal.X <= uwViewport.Size.X && uwLocal.Y <= uwViewport.Size.Y;
 	}
 
-	static bool TryGetHudPanelHit(Vector3 rayOrigin, Vector3 rayDir, out Vector2 viewportPos, out Vector3 hitWorld)
+	static bool TryGetHudPanelHit(Vector3 rayOrigin, Vector3 rayDir, float maxDistance, out Vector2 viewportPos, out Vector3 hitWorld)
 	{
 		viewportPos = default;
-		hitWorld = rayOrigin + rayDir * HudPointerMaxDistance;
+		hitWorld = rayOrigin + rayDir * maxDistance;
 		if (_hudPanel?.Mesh is not QuadMesh quad)
 		{
 			return false;
@@ -2706,7 +3098,7 @@ public static class VrController
 		}
 
 		var t = (xf.Origin - rayOrigin).Dot(planeNormal) / denom;
-		if (t < 0f || t > HudPointerMaxDistance)
+		if (t < 0f || t > maxDistance)
 		{
 			return false;
 		}
@@ -2801,7 +3193,9 @@ public static class VrController
 
 	static void ApplyDoorInteraction()
 	{
-		if (!IsActive || playerdat.ParalyseTimer > 0)
+		if (!IsActive || playerdat.ParalyseTimer > 0 || !uimanager.InGame
+			|| IsHudOnMenuScreen() || uimanager.AtMainMenu
+			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE)
 		{
 			_doorUseWasPressed = false;
 			return;

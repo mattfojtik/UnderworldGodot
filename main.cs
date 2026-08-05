@@ -166,14 +166,37 @@ public partial class main : Node3D
 		if (uwsettings.instance.vr)
 		{
 			VrController.TryInitialize(instance);
-			uimanager.CurrentGameMode = uimanager.GameModes.GAME;
-			if (uwsettings.instance.datafolder.Equals("DATA", StringComparison.OrdinalIgnoreCase))
+			if (uwsettings.instance.VrBootExplore)
 			{
-				VrController.InitExplorePlayer();
+				uimanager.CurrentGameMode = uimanager.GameModes.GAME;
+				if (uwsettings.instance.datafolder.Equals("DATA", StringComparison.OrdinalIgnoreCase))
+				{
+					VrController.InitExplorePlayer();
+				}
+				uimanager.instance.JourneyOnwards(uwsettings.instance.datafolder);
+				VrController.FinishWorldSetup(instance);
+				XMIMusic.PickLevelThemeMusic(0);
 			}
-			uimanager.instance.JourneyOnwards(uwsettings.instance.datafolder);
-			VrController.FinishWorldSetup(instance);
-			XMIMusic.PickLevelThemeMusic(0);
+			else
+			{
+				VrController.FinishWorldSetup(instance);
+				if (UWClass._RES != UWClass.GAME_UWDEMO)
+				{
+					uimanager.EnableDisable(uimanager.instance.uw1UI, false);
+					uimanager.EnableDisable(uimanager.instance.uw2UI, false);
+					uimanager.EnableDisable(uimanager.instance.PanelInventory, false);
+					uimanager.EnableDisable(uimanager.instance.ManaFlaskPanel, false);
+					uimanager.EnableDisable(uimanager.instance.HealthFlaskPanel, false);
+					cutsplayer.PlayCutscene(9, uimanager.ReturnToMainMenu);
+					XMIMusic.LoadXMI(XMIMusic.IntroTheme);
+					uimanager.AddToMessageScroll(GameStrings.GetString(1, 13));
+				}
+				else
+				{
+					cutsplayer.PlayCutscene(9, LaunchUWDemo);
+				}
+			}
+
 			return;
 		}
 
@@ -401,7 +424,7 @@ public partial class main : Node3D
 
 			var showLightingDebug = EnablePositionDebug
 				|| (uwsettings.instance.vr_light_debug && VrController.IsActive && !uwsettings.instance.vr_mirror);
-			if (showLightingDebug && lblPositionDebug != null)
+			if (showLightingDebug && !VrController.UsesFrontMenuScreen && lblPositionDebug != null)
 			{
 				if (!lblPositionDebug.Visible)
 				{

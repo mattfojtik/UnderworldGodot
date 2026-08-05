@@ -372,7 +372,12 @@ namespace Underworld
 			//And simple shade for object info layer.
 			RenderingServer.GlobalShaderParameterSet("simpleshade", (Texture)shade.shadesdata[playerdat.lightlevel].simpleshade);
 
-			if (!uwsettings.instance.vr)
+			if (uwsettings.instance.vr)
+			{
+				VrController.OnEnteringVrGameplay();
+				uimanager.EnableDisable(uimanager.instance.uwviewport, true);
+			}
+			else
 			{
 				uimanager.EnableDisable(uimanager.instance.uwviewport,true); //turn on camera, this might be turned off due to player death
 			}
@@ -492,6 +497,14 @@ namespace Underworld
 		}
 
 
+		public void HandleFrontMenuEscape()
+		{
+			ToggleMainMenuButtons(true);
+			ToggleSaves(false);
+			EnableDisable(PanelChargen, false);
+			EnableDisable(PanelMainMenu, true);
+		}
+
 		public override void _Input(InputEvent @event)
 		{
 			if (@event is InputEventKey keyinput)
@@ -514,10 +527,7 @@ namespace Underworld
 							case GameModes.CHARGEN:
 							case GameModes.JOURNEY:
 								{
-									ToggleMainMenuButtons(true);
-									ToggleSaves(false);
-									EnableDisable(PanelChargen, false);
-									EnableDisable(PanelMainMenu, true);
+									instance.HandleFrontMenuEscape();
 									break;
 								}
 							case GameModes.GAME://ingame
