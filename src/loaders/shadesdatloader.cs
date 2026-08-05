@@ -2,6 +2,7 @@ using System;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using Godot;
 
 namespace Underworld
@@ -14,6 +15,10 @@ namespace Underworld
         public int mapindex;
         int StartingLightLevel;
         int ViewingDistance;
+
+        /// <summary>Viewing-distance band count from SHADES.DAT (0–15).</summary>
+        public int ViewingDistanceUnits => ViewingDistance;
+
         int Shading;
         int StartOfShadingDistance;
 
@@ -30,8 +35,251 @@ namespace Underworld
 
         public static float GetViewingDistance(int index)
         {
-            return 4.8f * 7;
-            //return (float)shadesdata[index].ViewingDistance * 1.2f * 4;
+            // Match Hank: fixed 7 viewing bands (4.8f * 7 at design scale). Torch/ambient brightness
+            // comes from the smoothpalette row (lightlevel), not a shorter cutoff distance.
+            _ = index;
+            const int viewingUnits = 7;
+            return Mathf.Max(viewingUnits * tileMapRender.godotscale.Y, 0.01f);
+        }
+
+        /// <summary>World-space point used for shade/fog distance (simulated avatar eye, not HMD).</summary>
+        public static Vector3 GetAvatarShadeOrigin()
+        {
+            var px = motion.playerMotionParams.x_0;
+            var py = motion.playerMotionParams.y_2;
+            var pz = motion.playerMotionParams.z_4 + 0xA4;
+            return uwObject.XYZToVector3(px, py, pz);
+        }
+
+        public static void UpdateShaderShadeUniforms(int lightLevel)
+        {
+            RenderingServer.GlobalShaderParameterSet("avatar_shade_origin", GetAvatarShadeOrigin());
+            RenderingServer.GlobalShaderParameterSet("cutoffdistance", GetViewingDistance(lightLevel));
+        }
+
+        static int _lightingDebugLogFrame;
+        static int _lightingDebugRayFrame;
+        static int _lastLoggedLightLevel = -1;
+
+        /// <summary>Runtime lighting/shade distance diagnostics (HUD label + throttled log).</summary>
+        public static string BuildLightingDebugText(int lightLevel)
+        {
+            try
+            {
+                return BuildLightingDebugTextCore(lightLevel, forceViewRay: false);
+            }
+            catch (Exception ex)
+            {
+                return $"=== Shade debug (error) ===\n{ex.GetType().Name}: {ex.Message}";
+            }
+        }
+
+        static string BuildLightingDebugTextCore(int lightLevel, bool forceViewRay)
+        {
+            var cutoff = GetViewingDistance(lightLevel);
+            var origin = GetAvatarShadeOrigin();
+            var tilemap = VrController.GetTilemapNode(main.instance);
+            var tilemapScale = tilemap?.Scale ?? Vector3.One;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("=== Shade / lighting debug ===");
+            sb.AppendLine($"lightlevel={lightLevel}  cutoff={cutoff:F2}  (Hank flat ref=33.60)");
+            sb.AppendLine($"godotscale.Y={tileMapRender.godotscale.Y:F3}  WorldScaleFactor={tileMapRender.WorldScaleFactor:F3}");
+            sb.AppendLine($"tilemap.Scale={tilemapScale}  TileWidth={tileMapRender.TileWidth:F3}");
+            sb.AppendLine($"palette={Palette.CurrentPalette}  ColourTone={Palette.ColourTone}  paletteCycle={PaletteLoader.NextPaletteCycle_GAME}");
+            sb.AppendLine($"final_color_pass={(VrController.IsActive && !uwsettings.instance.vr_mirror)}  UseHdr2D={GetRootViewportUseHdr2D()}");
+            AppendSmoothPaletteSample(sb, lightLevel);
+            if (shadesdata != null && lightLevel >= 0 && lightLevel < shadesdata.Length)
+            {
+                sb.AppendLine($"SHADES[{lightLevel}].ViewDistUnits={shadesdata[lightLevel].ViewingDistanceUnits} (cutoff ignores this; Hank uses 7)");
+            }
+
+            sb.AppendLine($"avatar_shade_origin=({origin.X:F2}, {origin.Y:F2}, {origin.Z:F2})");
+
+            var hasHmd = VrController.TryGetXrEyeWorldPosition(out var hmd);
+            if (hasHmd)
+            {
+                var delta = hmd - origin;
+                sb.AppendLine($"HMD world=({hmd.X:F2}, {hmd.Y:F2}, {hmd.Z:F2})");
+                sb.AppendLine($"HMD-avatar dXYZ={delta.Length():F3}  dXZ={new Vector2(delta.X, delta.Z).Length():F3}");
+            }
+
+            if (main.cameraPitchGimbal_world != null)
+            {
+                var cam = main.cameraPitchGimbal_world.GlobalPosition;
+                sb.AppendLine($"camera world=({cam.X:F2}, {cam.Y:F2}, {cam.Z:F2})");
+            }
+
+            _lightingDebugRayFrame++;
+            var runRay = forceViewRay || _lightingDebugRayFrame % 30 == 0;
+            if (runRay && VrController.TryRaycastFromView(out var hitPos, cutoff * 1.5f))
+            {
+                AppendDistanceProbe(sb, "view ray hit", origin, hasHmd, hmd, hitPos, cutoff);
+            }
+            else if (!runRay)
+            {
+                sb.AppendLine("view ray: (throttled; updates every 30 frames)");
+            }
+            else
+            {
+                sb.AppendLine("view ray: no hit");
+            }
+
+            var forward = VrController.GetViewForwardWorld();
+            var probe7 = origin + forward * (7f * tileMapRender.TileWidth);
+            AppendDistanceProbe(sb, "7-tile probe (walls=XYZ, sprites=XZ)", origin, hasHmd, hmd, probe7, cutoff);
+
+            var forwardXZ = new Vector3(forward.X, 0f, forward.Z);
+            if (forwardXZ.LengthSquared() > 0.0001f)
+            {
+                forwardXZ = forwardXZ.Normalized();
+                var probe7xz = origin + forwardXZ * (7f * tileMapRender.TileWidth);
+                AppendDistanceProbe(sb, "7-tile XZ-only probe", origin, hasHmd, hmd, probe7xz, cutoff);
+            }
+
+            sb.AppendLine("maptouse=dist/cutoff  (1.0=fully dark; Hank torch uses palette row)");
+            return sb.ToString().TrimEnd();
+        }
+
+        static void AppendSmoothPaletteSample(StringBuilder sb, int lightLevel)
+        {
+            try
+            {
+                if (PaletteLoader.Palettes == null || Palette.CurrentPalette < 0
+                    || Palette.CurrentPalette >= PaletteLoader.Palettes.Length)
+                {
+                    return;
+                }
+
+                var cycled = PaletteLoader.Palettes[Palette.CurrentPalette].cycledGamePalette;
+                if (cycled == null)
+                {
+                    return;
+                }
+
+                int cycle = PaletteLoader.NextPaletteCycle_GAME;
+                if (cycle < 0)
+                {
+                    cycle = 0;
+                }
+                else if (cycle > cycled.GetUpperBound(2))
+                {
+                    cycle = cycled.GetUpperBound(2);
+                }
+
+                int tone = Math.Clamp(Palette.ColourTone, 0, 1);
+                int level = Math.Clamp(lightLevel, 0, 7);
+                var tex = cycled[tone, level, cycle];
+                var img = tex?.GetImage();
+                if (img == null)
+                {
+                    return;
+                }
+
+                int py = (int)Math.Round(0.25f * (img.GetHeight() - 1));
+                py = Math.Clamp(py, 0, img.GetHeight() - 1);
+                var near = img.GetPixel(128, py);
+                var far = img.GetPixel(128, img.GetHeight() - 1);
+                sb.AppendLine(
+                    $"smoothpalette[{tone},{level},{cycle}] px128 @maptouse0.25=({near.R8},{near.G8},{near.B8}) @1.0=({far.R8},{far.G8},{far.B8})");
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"smoothpalette sample: {ex.GetType().Name}");
+            }
+        }
+
+        static void AppendDistanceProbe(StringBuilder sb, string label, Vector3 avatarOrigin, bool hasHmd, Vector3 hmd, Vector3 target, float cutoff)
+        {
+            var dAvatarXyz = avatarOrigin.DistanceTo(target);
+            var dAvatarXz = DistanceXZ(avatarOrigin, target);
+            sb.AppendLine($"{label}:");
+            sb.AppendLine($"  avatar dXYZ={dAvatarXyz:F2} maptouseXYZ={dAvatarXyz / cutoff:F3}");
+            sb.AppendLine($"  avatar dXZ={dAvatarXz:F2} maptouseXZ={dAvatarXz / cutoff:F3}  (sprites/NPCs)");
+            if (hasHmd)
+            {
+                var dHmdXyz = hmd.DistanceTo(target);
+                var dHmdXz = DistanceXZ(hmd, target);
+                sb.AppendLine($"  HMD    dXYZ={dHmdXyz:F2} maptouseXYZ={dHmdXyz / cutoff:F3}");
+                sb.AppendLine($"  HMD    dXZ={dHmdXz:F2} maptouseXZ={dHmdXz / cutoff:F3}");
+            }
+        }
+
+        static float DistanceXZ(Vector3 a, Vector3 b)
+        {
+            var dx = a.X - b.X;
+            var dz = a.Z - b.Z;
+            return Mathf.Sqrt(dx * dx + dz * dz);
+        }
+
+        static bool GetRootViewportUseHdr2D()
+        {
+            return main.instance?.GetTree()?.Root?.GetViewport()?.UseHdr2D ?? false;
+        }
+
+        static bool _lightingLogPathAnnounced;
+
+        public static void MaybeLogLightingDebug(int lightLevel)
+        {
+            if (!uwsettings.instance.vr_light_debug || !VrController.IsActive || uwsettings.instance.vr_mirror)
+            {
+                return;
+            }
+
+            _lightingDebugLogFrame++;
+            var lightLevelChanged = lightLevel != _lastLoggedLightLevel;
+            if (!lightLevelChanged && _lightingDebugLogFrame % 120 != 0)
+            {
+                return;
+            }
+
+            _lastLoggedLightLevel = lightLevel;
+
+            string text;
+            try
+            {
+                text = BuildLightingDebugTextCore(lightLevel, forceViewRay: lightLevelChanged);
+            }
+            catch (Exception ex)
+            {
+                text = $"=== Shade debug (error) ===\n{ex.GetType().Name}: {ex.Message}";
+            }
+
+            WriteLightingDebugLog(text, append: lightLevelChanged);
+            GD.Print(text);
+        }
+
+        static void WriteLightingDebugLog(string body, bool append = false)
+        {
+            try
+            {
+                var projectDir = ProjectSettings.GlobalizePath("res://");
+                var logDir = Path.Combine(projectDir, "logs");
+                Directory.CreateDirectory(logDir);
+                var logPath = Path.Combine(logDir, "vr_lighting_debug.log");
+                var stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                var frame = Engine.GetFramesDrawn();
+                var header = $"=== {stamp}  frame={frame} ===";
+                var entry = header + "\n" + body + "\n";
+                if (append && File.Exists(logPath))
+                {
+                    File.AppendAllText(logPath, entry);
+                }
+                else
+                {
+                    File.WriteAllText(logPath, entry);
+                }
+
+                if (!_lightingLogPathAnnounced)
+                {
+                    _lightingLogPathAnnounced = true;
+                    GD.Print($"[VR lighting] Debug log file: {logPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                GD.PushWarning($"[VR lighting] Could not write debug log: {ex.Message}");
+            }
         }
 
         /// <summary>

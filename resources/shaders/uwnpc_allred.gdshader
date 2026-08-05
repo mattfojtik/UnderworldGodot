@@ -21,6 +21,7 @@ uniform sampler2D texture_albedo : source_color,filter_nearest,repeat_enable;// 
 global uniform sampler2D smoothpalette: source_color,filter_nearest; // pals.dat mapped into shades
 global uniform sampler2D xfer: source_color,filter_nearest; //xfer.dat transparency
 global uniform float cutoffdistance; // how far away the scene will render
+global uniform vec3 avatar_shade_origin; // simulated avatar eye for shade distance (not HMD)
 global uniform sampler2D simpleshade: source_color,filter_nearest;//shading data for objectinfo layer. used to find darkness
 global uniform bool final_color_pass; // native VR: resolve palette in this pass
 
@@ -49,7 +50,13 @@ void vertex() {
 
 void fragment() {
 
-	float dist = final_color_pass ? length(VERTEX) : distance((INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xz, (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xz);
+	vec3 world_camera = (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xyz;
+	vec3 shade_origin = avatar_shade_origin;
+	if (dot(shade_origin, shade_origin) < 1e-12) {
+		shade_origin = world_camera;
+	}
+	vec4 fragWorld4 = INV_VIEW_MATRIX * vec4(VERTEX, 1.0);
+	float dist = distance(fragWorld4.xz, shade_origin.xz);
 
 	if (dist > cutoffdistance)
 	{		
@@ -66,7 +73,10 @@ void fragment() {
 		if (final_color_pass)
 		{
 			// Native VR: resolve palette here.
-			vec4 finalcolour = texture(smoothpalette, vec2(rgba.r, maptouse));
+			ivec2 pal_size = textureSize(smoothpalette, 0);
+			int px = clamp(int(round(rgba.r * 255.0)), 0, pal_size.x - 1);
+			int py = clamp(int(round(maptouse * float(pal_size.y - 1))), 0, pal_size.y - 1);
+			vec4 finalcolour = texelFetch(smoothpalette, ivec2(px, py), 0);
 			ALBEDO = finalcolour.rgb;
 			ALPHA = finalcolour.a;
 		}

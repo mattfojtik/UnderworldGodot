@@ -397,10 +397,27 @@ public partial class main : Node3D
 		//Other updates
 		if (uimanager.InGame)
 		{
-			if (EnablePositionDebug)
+			shade.UpdateShaderShadeUniforms(playerdat.lightlevel);
+
+			var showLightingDebug = EnablePositionDebug
+				|| (uwsettings.instance.vr_light_debug && VrController.IsActive && !uwsettings.instance.vr_mirror);
+			if (showLightingDebug && lblPositionDebug != null)
 			{
-				var fps = Engine.GetFramesPerSecond();
-				lblPositionDebug.Text = $"FPS:{fps} Time:{playerdat.game_time} PIT:{GlobalPITTimer}\nL:{playerdat.dungeon_level} X:{playerdat.playerObject.npc_xhome} Y:{playerdat.playerObject.npc_yhome}\nMouseposition:{uimanager.instance.uwviewport.GetLocalMousePosition()}\nPlayer Coordinates {motion.playerMotionParams.x_0} {motion.playerMotionParams.y_2} {motion.playerMotionParams.z_4}";
+				if (!lblPositionDebug.Visible)
+				{
+					uimanager.EnableDisable(lblPositionDebug, true);
+				}
+
+				if (EnablePositionDebug && !uwsettings.instance.vr_light_debug)
+				{
+					var fps = Engine.GetFramesPerSecond();
+					lblPositionDebug.Text = $"FPS:{fps} Time:{playerdat.game_time} PIT:{GlobalPITTimer}\nL:{playerdat.dungeon_level} X:{playerdat.playerObject.npc_xhome} Y:{playerdat.playerObject.npc_yhome}\nMouseposition:{uimanager.instance.uwviewport.GetLocalMousePosition()}\nPlayer Coordinates {motion.playerMotionParams.x_0} {motion.playerMotionParams.y_2} {motion.playerMotionParams.z_4}";
+				}
+				else
+				{
+					lblPositionDebug.Text = shade.BuildLightingDebugText(playerdat.lightlevel);
+					shade.MaybeLogLightingDebug(playerdat.lightlevel);
+				}
 			}
 
 			if ((MessageDisplay.WaitingForTypedInput) || (MessageDisplay.WaitingForYesOrNo))
@@ -842,10 +859,20 @@ public partial class main : Node3D
 								break;
 							}
 
-						case Key.F11://toggle position label
+						case Key.F11://toggle position / lighting debug label
 							{
-								EnablePositionDebug = !EnablePositionDebug;
-								uimanager.EnableDisable(lblPositionDebug, EnablePositionDebug);
+								if (VrController.IsActive && !uwsettings.instance.vr_mirror)
+								{
+									uwsettings.instance.vr_light_debug = !uwsettings.instance.vr_light_debug;
+									uwsettings.instance.Save();
+									EnablePositionDebug = uwsettings.instance.vr_light_debug;
+								}
+								else
+								{
+									EnablePositionDebug = !EnablePositionDebug;
+								}
+
+								uimanager.EnableDisable(lblPositionDebug, EnablePositionDebug || uwsettings.instance.vr_light_debug);
 								break;
 							}
 						case Key.F12://screenshot

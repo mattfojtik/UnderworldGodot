@@ -6,6 +6,7 @@
 # Custom project settings
 uwsettings.json
 .runsettings
+logs/
 .idea/
 .env
 

@@ -23,6 +23,7 @@ global uniform sampler2D xfer: source_color,filter_nearest; //xfer.dat transpare
 global uniform sampler2D simpleshade: source_color,filter_nearest;//shading data for objectinfo layer. used to find darkness
 
 global uniform float cutoffdistance; // how far away the scene will render
+global uniform vec3 avatar_shade_origin; // simulated avatar eye for shade distance (not HMD)
 global uniform bool renderwalls;
 global uniform bool renderfloors;
 global uniform bool renderceilings;
@@ -39,8 +40,14 @@ void vertex() {
 
 void fragment() {
 
-	// View-space distance is stereo-correct for XR; world-camera distance for flat multi-viewport.
-	float dist = final_color_pass ? length(VERTEX) : distance((INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xyz);
+	vec3 world_camera = (INV_VIEW_MATRIX * vec4(vec3(0.0), 1.0)).xyz;
+	vec4 fragWorld4 = INV_VIEW_MATRIX * vec4(VERTEX, 1.0);
+	// Avatar eye for VR room-scale; fall back to camera until C# sets the uniform.
+	vec3 shade_origin = avatar_shade_origin;
+	if (dot(shade_origin, shade_origin) < 1e-12) {
+		shade_origin = world_camera;
+	}
+	float dist = distance(fragWorld4.xyz, shade_origin);
 
 	if (dist > cutoffdistance)
 	{		
@@ -103,7 +110,12 @@ void fragment() {
 			if (final_color_pass)
 			{
 				// Native VR: resolve palette here (no viewport_combination pass).
-				vec4 finalcolour = texture(smoothpalette, vec2(rgba.r, maptouse));
+				// texelFetch uses raw palette bytes; texture() + source_color linearizes and
+				// the mobile/XR 3D path can display darker than the flat canvas composite.
+				ivec2 pal_size = textureSize(smoothpalette, 0);
+				int px = clamp(int(round(rgba.r * 255.0)), 0, pal_size.x - 1);
+				int py = clamp(int(round(maptouse * float(pal_size.y - 1))), 0, pal_size.y - 1);
+				vec4 finalcolour = texelFetch(smoothpalette, ivec2(px, py), 0);
 				ALBEDO = finalcolour.rgb;
 			}
 			else

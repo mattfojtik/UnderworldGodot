@@ -87,6 +87,8 @@ public class uwsettings
     public string datafolder { get; set; } = "DATA";
     /// <summary>Print VR diagnostics and draw bright debug geometry in the headset.</summary>
     public bool vr_debug { get; set; } = true;
+    /// <summary>Overlay shade/cutoff distance debug on the HUD (F11 also toggles). Off by default.</summary>
+    public bool vr_light_debug { get; set; } = false;
     /// <summary>
     /// World scale in VR (corridors, ceilings, doors). Applied before level load. Higher = feel shorter.
     /// Door opening ≈ 0.975 * scale meters. For ~7 ft doors use ~2.18.

@@ -735,11 +735,9 @@ namespace Underworld
 
         public static void RefreshLighting()
         {
-            var cutoff = uwsettings.instance.vr
-                ? VrController.VrViewDistance
-                : shade.GetViewingDistance(lightlevel);
-            RenderingServer.GlobalShaderParameterSet("cutoffdistance", cutoff);
+            shade.UpdateShaderShadeUniforms(playerdat.lightlevel);
             RenderingServer.GlobalShaderParameterSet("simpleshade", (Texture)shade.shadesdata[playerdat.lightlevel].simpleshade);
+            PaletteLoader.UpdateSmoothPaletteForLighting();
         }
 
         /// <summary>

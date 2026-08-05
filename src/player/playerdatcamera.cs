@@ -156,7 +156,15 @@ namespace Underworld
             Vector3 underworldVector = new(x: -(float)x / 16384f, y: (float)z / 1024f, z: (float)y / 16384f);
 
             //then transform it into godot positioning using a vector based on the size we are rendering the gameworld in.
-            main.cameraYawGimbal_world.Position = underworldVector * tileMapRender.godotscale;
+            var worldPosition = underworldVector * tileMapRender.godotscale;
+
+            // Native VR: world translation lives on XROrigin (see SyncXrOriginFromGimbal); the
+            // XRCamera keeps OpenXR's local head pose. Setting world coords here double-counts
+            // translation and makes shader distance (and fog) much too large.
+            if (!(VrController.IsActive && !uwsettings.instance.vr_mirror))
+            {
+                main.cameraYawGimbal_world.Position = worldPosition;
+            }
 
             if ((CameraIsBobbing_dseg_67d6_33c6) && (applyBob) && !VrController.IsActive)
             {
@@ -173,20 +181,13 @@ namespace Underworld
                 // Body position from simulation; head orientation from OpenXR (see SyncMirrorHeadLook).
                 VrController.SyncMirrorHeadLook();
             }
-            else if (VrController.IsActive && !uwsettings.instance.vr_mirror)
-            {
-                // Body position/yaw from simulation; head look comes from OpenXR on the XRCamera.
-                main.cameraYawGimbal_world.Rotation = Vector3.Zero;
-                main.cameraYawGimbal_world.Rotate(Vector3.Up, (float)(Math.PI));
-                main.cameraYawGimbal_world.Rotate(Vector3.Up, (float)(-((float)yaw / 32767f) * Math.PI));
-
-                main.cameraRollGimbal_world.Rotation = Vector3.Zero;
-                main.cameraPitchGimbal_world.Rotation = Vector3.Zero;
-
-                var visionYaw = VrController.GetHeadYawForVision();
-                VrController.UpdateVisionHeadingFromYaw(visionYaw);
-                VrController.UpdateVisionFromHead(CameraTileX, CameraTileY, visionYaw);
-            }
+			else if (VrController.IsActive && !uwsettings.instance.vr_mirror)
+			{
+				// Head look: OpenXR on XRCamera. Body yaw: XROrigin play-space rotation.
+				var visionYaw = VrController.GetHeadYawForVision();
+				VrController.UpdateVisionHeadingFromYaw(visionYaw);
+				VrController.UpdateVisionFromHead(CameraTileX, CameraTileY, visionYaw);
+			}
             else
             {
                 //Set up the Yaw gimbal             

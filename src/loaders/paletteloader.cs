@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 namespace Underworld
@@ -147,6 +148,10 @@ namespace Underworld
                 name: "cutoffdistance",
                 type: RenderingServer.GlobalShaderParameterType.Float,
                 defaultValue: shade.GetViewingDistance(playerdat.lightlevel));
+            RenderingServer.GlobalShaderParameterAdd(
+                name: "avatar_shade_origin",
+                type: RenderingServer.GlobalShaderParameterType.Vec3,
+                defaultValue: Vector3.Zero);
             RenderingServer.GlobalShaderParameterAdd(
                 name: "simpleshade",
                 type: RenderingServer.GlobalShaderParameterType.Sampler2D,
@@ -393,12 +398,7 @@ namespace Underworld
 
         public static void UpdateShaderCycleParams()
         {
-            if (NextPaletteCycle_GAME != -1)
-            {
-                RenderingServer.GlobalShaderParameterSet(
-                    name: "smoothpalette",
-                    value: (Texture)Palettes[Palette.CurrentPalette].cycledGamePalette[Palette.ColourTone, playerdat.lightlevel, NextPaletteCycle_GAME]);
-            }
+            UpdateSmoothPaletteForLighting();
 
             if (NextPaletteCycle_UI != -1)
             {
@@ -406,6 +406,38 @@ namespace Underworld
                     name: "uipalette",
                     value: (Texture)Palettes[Palette.CurrentPalette].cycledUIPalette[NextPaletteCycle_UI]);
             }
+        }
+
+        /// <summary>Point smoothpalette at the shaded palette row for the current light level.</summary>
+        public static void UpdateSmoothPaletteForLighting()
+        {
+            if (Palettes == null || Palette.CurrentPalette < 0 || Palette.CurrentPalette >= Palettes.Length)
+            {
+                return;
+            }
+
+            var cycled = Palettes[Palette.CurrentPalette].cycledGamePalette;
+            if (cycled == null)
+            {
+                return;
+            }
+
+            int cycle = NextPaletteCycle_GAME;
+            if (cycle < 0)
+            {
+                cycle = 0;
+            }
+            else if (cycle > cycled.GetUpperBound(2))
+            {
+                cycle = cycled.GetUpperBound(2);
+            }
+
+            int lightLevel = Math.Clamp(playerdat.lightlevel, 0, 7);
+            int tone = Math.Clamp(Palette.ColourTone, 0, 1);
+
+            RenderingServer.GlobalShaderParameterSet(
+                name: "smoothpalette",
+                cycled[tone, lightLevel, cycle]);
         }
 
         //Provides a bbcode string for the specified palette colour

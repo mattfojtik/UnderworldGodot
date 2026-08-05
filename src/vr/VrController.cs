@@ -27,8 +27,6 @@ public static class VrController
 	/// <summary>Right grip held while aiming into the live VR world.</summary>
 	public static bool IsVrWorldRightHeld { get; private set; }
 
-	public const float VrViewDistance = 512f;
-
 	static Vector3 _baseGodotScale;
 	static bool _vrWorldScaleApplied;
 
@@ -174,6 +172,8 @@ public static class VrController
 		if (xrInterface == null)
 		{
 			GD.PushWarning("OpenXR interface not found. Running in flat-screen mode.");
+			ResetVrWorldScale();
+			RenderingServer.GlobalShaderParameterSet("final_color_pass", false);
 			uwsettings.instance.vr = false;
 			return;
 		}
@@ -185,6 +185,8 @@ public static class VrController
 		if (!xrInterface.IsInitialized() && !xrInterface.Initialize())
 		{
 			GD.PushWarning("OpenXR failed to initialize. Running in flat-screen mode.");
+			ResetVrWorldScale();
+			RenderingServer.GlobalShaderParameterSet("final_color_pass", false);
 			uwsettings.instance.vr = false;
 			return;
 		}
@@ -230,14 +232,116 @@ public static class VrController
 		_baseGodotScale = tileMapRender.godotscale;
 		tileMapRender.godotscale = _baseGodotScale * scale;
 
-		var tilemap = gameRoot.GetNodeOrNull<Node3D>("../tilemap");
+		EnsureVrTilemapScale(gameRoot);
+
+		_vrWorldScaleApplied = true;
+		GD.Print($"[VR] World scale {scale}x, sprite scale {spriteScale}x — godotscale={tileMapRender.godotscale}, tilemap.Scale={GetTilemapNode(gameRoot)?.Scale}");
+	}
+
+	/// <summary>Tile verts use hardcoded 1.2f; scale the tilemap node so geometry matches godotscale coords.</summary>
+	public static void EnsureVrTilemapScale(main gameRoot = null)
+	{
+		var scale = tileMapRender.WorldScaleFactor;
+		if (scale <= 1f)
+		{
+			return;
+		}
+
+		var tilemap = GetTilemapNode(gameRoot ?? main.instance);
 		if (tilemap != null)
 		{
 			tilemap.Scale = Vector3.One * scale;
 		}
+	}
 
-		_vrWorldScaleApplied = true;
-		GD.Print($"[VR] World scale {scale}x, sprite scale {spriteScale}x — godotscale={tileMapRender.godotscale}, tilemap.Scale={tilemap?.Scale}");
+	public static Node3D GetTilemapNode(main gameRoot)
+	{
+		return gameRoot?.GetNodeOrNull<Node3D>("/root/Underworld/tilemap")
+			?? gameRoot?.GetNodeOrNull<Node3D>("../tilemap");
+	}
+
+	static void ResetVrWorldScale()
+	{
+		if (!_vrWorldScaleApplied)
+		{
+			tileMapRender.WorldScaleFactor = 1f;
+			return;
+		}
+
+		if (_baseGodotScale != default)
+		{
+			tileMapRender.godotscale = _baseGodotScale;
+		}
+
+		tileMapRender.WorldScaleFactor = 1f;
+		var tilemap = GetTilemapNode(main.instance);
+		if (tilemap != null)
+		{
+			tilemap.Scale = Vector3.One;
+		}
+
+		_vrWorldScaleApplied = false;
+	}
+
+	public static bool TryGetXrEyeWorldPosition(out Vector3 worldPos)
+	{
+		if (_xrCamera != null && _xrCamera.IsInsideTree())
+		{
+			worldPos = _xrCamera.GlobalPosition;
+			return true;
+		}
+
+		worldPos = default;
+		return false;
+	}
+
+	public static Vector3 GetViewForwardWorld()
+	{
+		if (_xrCamera != null && _xrCamera.IsInsideTree())
+		{
+			return -_xrCamera.GlobalTransform.Basis.Z;
+		}
+
+		if (main.cameraPitchGimbal_world != null)
+		{
+			return -main.cameraPitchGimbal_world.GlobalTransform.Basis.Z;
+		}
+
+		return Vector3.Forward;
+	}
+
+	public static bool TryRaycastFromView(out Vector3 hitPos, float maxDist)
+	{
+		hitPos = default;
+		if (_gameRoot == null)
+		{
+			return false;
+		}
+
+		Vector3 origin;
+		Vector3 dir;
+		if (_xrCamera != null && _xrCamera.IsInsideTree())
+		{
+			origin = _xrCamera.GlobalPosition;
+			dir = -_xrCamera.GlobalTransform.Basis.Z;
+		}
+		else if (main.cameraPitchGimbal_world != null)
+		{
+			origin = main.cameraPitchGimbal_world.GlobalPosition;
+			dir = -main.cameraPitchGimbal_world.GlobalTransform.Basis.Z;
+		}
+		else
+		{
+			return false;
+		}
+
+		if (dir.LengthSquared() < 0.0001f)
+		{
+			return false;
+		}
+
+		dir = dir.Normalized();
+		return TryPhysicsRayPick(origin, dir, maxDist, out _, out _, out hitPos);
 	}
 
 	/// <summary>
@@ -729,7 +833,10 @@ public static class VrController
 		rootViewport.UseXR = true;
 
 		_openXrOutputEnabled = true;
-		GD.Print($"[VR] OpenXR output enabled. UseXR={rootViewport.UseXR} XRCamera path={_xrCamera.GetPath()} Current={_xrCamera.Current}");
+		// Flat composites via canvas_item; native XR draws 3D directly. HDR 2D on the root
+		// viewport (project default is on) darkens unshaded palette output on the mobile renderer.
+		rootViewport.UseHdr2D = false;
+		GD.Print($"[VR] OpenXR output enabled. UseXR={rootViewport.UseXR} UseHdr2D={rootViewport.UseHdr2D} XRCamera path={_xrCamera.GetPath()} Current={_xrCamera.Current}");
 	}
 
 	static void SetupNativeWorldCamera()
@@ -744,6 +851,8 @@ public static class VrController
 		main.cameraPitchGimbal_world = _xrCamera;
 		// Bypass multi-viewport palette composition; resolve colors in spatial shaders.
 		RenderingServer.GlobalShaderParameterSet("final_color_pass", true);
+		shade.UpdateShaderShadeUniforms(playerdat.lightlevel);
+		PaletteLoader.UpdateSmoothPaletteForLighting();
 		SyncXrOriginFromGimbal();
 	}
 
@@ -1234,24 +1343,25 @@ public static class VrController
 	static void EnsureWorldEnvironment(Node3D underworld)
 	{
 		var existing = underworld.GetNodeOrNull<WorldEnvironment>("VrWorldEnvironment");
+		WorldEnvironment worldEnvironment;
 		if (existing != null)
 		{
-			existing.Environment ??= new Godot.Environment();
-			existing.Environment.BackgroundMode = Godot.Environment.BGMode.Color;
-			existing.Environment.BackgroundColor = Colors.Black;
-			return;
+			worldEnvironment = existing;
+		}
+		else
+		{
+			worldEnvironment = new WorldEnvironment { Name = "VrWorldEnvironment" };
+			underworld.AddChild(worldEnvironment);
 		}
 
-		var worldEnvironment = new WorldEnvironment { Name = "VrWorldEnvironment" };
-		worldEnvironment.Environment = new Godot.Environment
-		{
-			BackgroundMode = Godot.Environment.BGMode.Color,
-			BackgroundColor = Colors.Black,
-			AmbientLightSource = Godot.Environment.AmbientSource.Color,
-			AmbientLightColor = Colors.White,
-			AmbientLightEnergy = 2f,
-		};
-		underworld.AddChild(worldEnvironment);
+		worldEnvironment.Environment ??= new Godot.Environment();
+		worldEnvironment.Environment.BackgroundMode = Godot.Environment.BGMode.Color;
+		worldEnvironment.Environment.BackgroundColor = Colors.Black;
+		// UW lighting is entirely shader/palette-based (unshaded); no Godot ambient fill.
+		worldEnvironment.Environment.AmbientLightSource = Godot.Environment.AmbientSource.Disabled;
+		// Flat mode has no WorldEnvironment; keep tonemap linear with no exposure crush.
+		worldEnvironment.Environment.TonemapMode = Godot.Environment.ToneMapper.Linear;
+		worldEnvironment.Environment.TonemapExposure = 1.0f;
 	}
 
 	static void LogVrSetupState(main gameRoot, Viewport rootViewport, string phase)

@@ -282,6 +282,7 @@ namespace Underworld
 
             ObjectCreator.worldobjects = main.instance.GetNode<Node3D>("/root/Underworld/worldobjects");
             Node3D the_tiles = main.instance.GetNode<Node3D>("/root/Underworld/tilemap");
+            VrController.EnsureVrTilemapScale();
             if (newGameSession)
             {
                 dungeons = new UWTileMap[NO_OF_LEVELS];
@@ -318,6 +319,9 @@ namespace Underworld
                 Level: current_tilemap,
                 objList: current_tilemap.LevelObjects,
                 UpdateOnly: false);
+
+            shade.UpdateShaderShadeUniforms(playerdat.lightlevel);
+            PaletteLoader.UpdateSmoothPaletteForLighting();
 
             if (automap.automaps[newLevelNo] == null)
             {
