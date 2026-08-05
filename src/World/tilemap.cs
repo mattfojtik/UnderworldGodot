@@ -338,6 +338,7 @@ namespace Underworld
             {
                 playerdat.PositionPlayerCamera();
                 VrController.ResetXrOriginFloorTracking();
+                VrController.InitializeMotionStep();
                 VrController.SnapRoomOriginToAvatar();
             }
 

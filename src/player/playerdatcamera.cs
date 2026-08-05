@@ -91,7 +91,7 @@ namespace Underworld
                             yaw: PlayerCameraYaw_dseg_8294,
                             roll: PlayerCameraRoll_dseg_67d6_33D8,
                             pitch: PlayerCameraPitch_dseg_67d6_33D6,
-                            applyBob: CameraIsBobbing_dseg_67d6_33c6);
+                            applyBob: CameraIsBobbing_dseg_67d6_33c6 && !VrController.SuppressFlatCameraBob);
 
                     }
                     else
@@ -147,7 +147,7 @@ namespace Underworld
 
         private static void PositionCamera(short x, short y, short z, short yaw, short roll, short pitch, bool applyBob)
         {
-            if (applyBob)
+            if (applyBob && !VrController.SuppressFlatCameraBob)
             {
                 z += CameraBobZAdjust_dseg_67d6_33CE; //note that over time when in water the camera will go beneath the water level due to the swimmingcounter getting larger
             }

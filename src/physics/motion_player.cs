@@ -105,7 +105,7 @@ namespace Underworld
             // }
 
 
-            if ((playerMotionParams.tilestate25 & 0x10) == 0)
+            if ((playerMotionParams.tilestate25 & 0x10) == 0 && !VrController.SuppressFlatCameraBob)
             {
                 //THIS SECTION SETS UP WALKING CAMERA BOB
                 if ((PlayerActualForwardSpeed_1_dseg_67d6_22A6 >> 2) < playerMotionParams.momentum_14)

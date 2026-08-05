@@ -52,6 +52,8 @@ public partial class main : Node3D
 
 	double gameRefreshTimer = 0f;
 	static double testclock = 0;
+	/// <summary>DOS motion tick period (~10 Hz). Used for VR play-space interpolation.</summary>
+	public const double MotionTickInterval = 0.097659;
 
 	double cycletime = 0;
 
@@ -266,11 +268,6 @@ public partial class main : Node3D
 
 	public override void _PhysicsProcess(double delta)
 	{
-		if (uwsettings.instance.vr)
-		{
-			VrController.TickRuntime((float)delta);
-		}
-
 		if ((uimanager.InGame) || (uimanager.AtMainMenu) || (uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE))
 		{
 			PitTimer += delta;
@@ -322,10 +319,12 @@ public partial class main : Node3D
 		//UGH
 
 		testclock += delta;
+		float motionBlend = (float)Mathf.Clamp(testclock / MotionTickInterval, 0.0, 1.0);
 
-		if ((uimanager.InGame) && (testclock >= 0.097659) && (!uimanager.blockinput))
+		if ((uimanager.InGame) && (testclock >= MotionTickInterval) && (!uimanager.blockinput))
 		{
 			testclock = 0;
+			motionBlend = 0f;
 			byte AnimationFrameDeltaIncrement = 0;
 
 			var ClockIncrement = GlobalPITTimer - LastGlobalPitTimer;
@@ -370,7 +369,16 @@ public partial class main : Node3D
 					AnimationFrameDelta: AnimationFrameDeltaIncrement,
 					EasyMove: false);
 
+				if (VrController.IsActive && !uwsettings.instance.vr_mirror)
+				{
+					VrController.EndMotionStep();
+				}
 			}
+		}
+
+		if (uwsettings.instance.vr)
+		{
+			VrController.TickRuntime((float)delta, motionBlend);
 		}
 
 		// VR pointer/laser must keep updating during conversations and other blockinput menus.
@@ -1073,16 +1081,11 @@ public partial class main : Node3D
 			{
 				if (keyinput.Pressed)
 				{
-					bool stop = false;
 					switch (keyinput.Keycode)
 					{
 						case Key.Enter:
-							stop = true;
-							break;
 						case Key.Escape:
-							stop = true;
-							uimanager.instance.TypedInput.Text = "No";
-							MessageDisplay.YesNoOption = "No";
+							MessageDisplay.ConfirmYesNoResponse(keyinput.Keycode == Key.Escape ? false : null);
 							break;
 						case Key.Y:
 							uimanager.instance.TypedInput.Text = "Yes";
@@ -1092,13 +1095,6 @@ public partial class main : Node3D
 							uimanager.instance.TypedInput.Text = "No";
 							MessageDisplay.YesNoOption = "No";
 							break;
-					}
-					if (stop)
-					{//end typed input
-						uimanager.instance.scroll.Clear();
-						MessageDisplay.WaitingForYesOrNo = false;
-						MessageDisplay.YesNoOption = "";
-						cameraPitchGimbal_world.Set("MOVE", true);//re-enable movement
 					}
 				}
 			}

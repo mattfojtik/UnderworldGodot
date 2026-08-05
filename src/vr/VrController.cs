@@ -11,6 +11,10 @@ public static class VrController
 {
 	public static bool IsActive { get; private set; }
 
+	/// <summary>Native VR: OpenXR head pose replaces DOS camera bob on the flat gimbals.</summary>
+	public static bool SuppressFlatCameraBob =>
+		IsActive && !uwsettings.instance.vr_mirror;
+
 	/// <summary>Right-hand laser is over the 3D viewport hole in the HUD (not chrome/buttons).</summary>
 	public static bool IsHud3DViewportHovering { get; private set; }
 
@@ -58,7 +62,10 @@ public static class VrController
 	static bool _recenterWasPressed;
 	static bool _quitWasPressed;
 	static bool _xrOriginFloorInitialized;
-	static Vector3 _lastAvatarFloorPos;
+	static Vector3 _lastSyncedDisplayFloorPos;
+	static Vector3 _motionStepPrevFloor;
+	static Vector3 _motionStepCurrFloor;
+	static bool _motionStepInitialized;
 	static short _lastSyncedBodyYaw;
 	static float _xrPlaySpaceYawRadians;
 	static int _debugFrameCounter;
@@ -475,12 +482,14 @@ public static class VrController
 		GD.Print("[VR] FinishWorldSetup queued on SceneTree.ProcessFrame.");
 	}
 
-	public static void TickRuntime(float delta)
+	public static void TickRuntime(float delta, float motionBlend = 1f)
 	{
 		if (!IsActive)
 		{
 			return;
 		}
+
+		_motionBlend = motionBlend;
 
 		if (_snapTurnCooldown > 0f)
 		{
@@ -688,6 +697,7 @@ public static class VrController
 		playerdat.RefreshLighting();
 		ResetXrOriginFloorTracking();
 		playerdat.PositionPlayerCamera();
+		InitializeMotionStep();
 		SnapRoomOriginToAvatar();
 		if (uimanager.InGame)
 		{
@@ -937,10 +947,48 @@ public static class VrController
 		underworld.AddChild(_pointerLaser);
 	}
 
+	static float _motionBlend = 1f;
+
 	public static void ResetXrOriginFloorTracking()
 	{
 		_xrOriginFloorInitialized = false;
-		_lastAvatarFloorPos = Vector3.Zero;
+		_lastSyncedDisplayFloorPos = Vector3.Zero;
+		_motionStepInitialized = false;
+	}
+
+	/// <summary>Call after each DOS motion tick so VR can interpolate between steps.</summary>
+	public static void EndMotionStep()
+	{
+		var floorPos = GetAvatarFloorPos();
+		if (!_motionStepInitialized)
+		{
+			_motionStepPrevFloor = floorPos;
+			_motionStepCurrFloor = floorPos;
+			_motionStepInitialized = true;
+			return;
+		}
+
+		_motionStepPrevFloor = _motionStepCurrFloor;
+		_motionStepCurrFloor = floorPos;
+	}
+
+	/// <summary>Seed interpolation state after the avatar is first positioned.</summary>
+	public static void InitializeMotionStep()
+	{
+		var floorPos = GetAvatarFloorPos();
+		_motionStepPrevFloor = floorPos;
+		_motionStepCurrFloor = floorPos;
+		_motionStepInitialized = true;
+	}
+
+	static Vector3 GetDisplayFloorPos()
+	{
+		if (!_motionStepInitialized || uwsettings.instance.vr_mirror)
+		{
+			return GetAvatarFloorPos();
+		}
+
+		return _motionStepPrevFloor.Lerp(_motionStepCurrFloor, _motionBlend);
 	}
 
 	static Vector3 GetAvatarFloorPos()
@@ -987,12 +1035,12 @@ public static class VrController
 		}
 
 		// Follow avatar by delta only — preserves the sticky XZ offset from B-recenter.
-		// Do not pin/compensate to the cyan marker every frame (that causes motion sickness).
-		var floorPos = GetAvatarFloorPos();
+		// Interpolate between DOS motion ticks so the play space does not snap at ~10 Hz.
+		var floorPos = GetDisplayFloorPos();
 		if (!_xrOriginFloorInitialized)
 		{
 			_xrOrigin.GlobalPosition = floorPos;
-			_lastAvatarFloorPos = floorPos;
+			_lastSyncedDisplayFloorPos = floorPos;
 			_xrOriginFloorInitialized = true;
 			_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
 			_xrPlaySpaceYawRadians = GetBodyYawRadians();
@@ -1000,8 +1048,8 @@ public static class VrController
 		}
 		else
 		{
-			_xrOrigin.GlobalPosition += floorPos - _lastAvatarFloorPos;
-			_lastAvatarFloorPos = floorPos;
+			_xrOrigin.GlobalPosition += floorPos - _lastSyncedDisplayFloorPos;
+			_lastSyncedDisplayFloorPos = floorPos;
 		}
 
 		// Only rotate the play space on snap-turns. Gradual body-yaw alignment during
@@ -1084,7 +1132,10 @@ public static class VrController
 		var headWorld = _xrCamera.GlobalPosition;
 		var delta = new Vector3(floorPos.X - headWorld.X, 0f, floorPos.Z - headWorld.Z);
 		_xrOrigin.GlobalPosition += delta;
-		_lastAvatarFloorPos = floorPos;
+		_lastSyncedDisplayFloorPos = floorPos;
+		_motionStepPrevFloor = GetAvatarFloorPos();
+		_motionStepCurrFloor = _motionStepPrevFloor;
+		_motionStepInitialized = true;
 	}
 
 	static void ApplyRecenterInput()
@@ -1509,9 +1560,10 @@ public static class VrController
 		var px = motion.playerMotionParams.x_0;
 		var py = motion.playerMotionParams.y_2;
 		var pz = motion.playerMotionParams.z_4;
-		var feet = uwObject.XYZToVector3(px, py, pz);
+		var displayFloor = GetDisplayFloorPos();
+		var simFeet = uwObject.XYZToVector3(px, py, pz);
 		var eye = uwObject.XYZToVector3(px, py, pz + 0xA4);
-		var bodyHeight = Mathf.Max(0.2f, eye.Y - feet.Y);
+		var bodyHeight = Mathf.Max(0.2f, eye.Y - simFeet.Y);
 		var radius = Mathf.Max(0.08f, (motion.playerMotionParams.radius_22 / 8f) * tileMapRender.TileWidth);
 
 		if (_bodyMarker.Mesh is CapsuleMesh capsule)
@@ -1520,7 +1572,7 @@ public static class VrController
 			capsule.Height = bodyHeight;
 		}
 
-		_bodyMarker.GlobalPosition = feet + Vector3.Up * (bodyHeight * 0.5f);
+		_bodyMarker.GlobalPosition = displayFloor + Vector3.Up * (bodyHeight * 0.5f);
 		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
 		_bodyMarker.Rotation = new Vector3(0f, bodyYaw, 0f);
 	}
@@ -2349,7 +2401,7 @@ public static class VrController
 		}
 
 		_hudPointerHovering = hovering;
-		UpdateConversationScrollHover(viewportPos, hovering);
+		UpdateMessageScrollHover(viewportPos, hovering);
 
 		if (!hovering)
 		{
@@ -2402,6 +2454,7 @@ public static class VrController
 		if (leftPressed && !_hudPointerLeftWasPressed)
 		{
 			if (!TryDismissMessageMore()
+				&& !TryConfirmYesNoPrompt(viewportPos, yes: true)
 				&& !TrySelectConversationOption(viewportPos))
 			{
 				PushHudMouseClick(viewportPos, MouseButton.Left);
@@ -2413,6 +2466,7 @@ public static class VrController
 		if (rightPressed && !_hudPointerRightWasPressed)
 		{
 			if (!TryDismissMessageMore()
+				&& !TryConfirmYesNoPrompt(viewportPos, yes: false)
 				&& !TrySelectConversationOption(viewportPos))
 			{
 				PushHudMouseClick(viewportPos, MouseButton.Right);
@@ -2432,15 +2486,26 @@ public static class VrController
 		return true;
 	}
 
-	static void UpdateConversationScrollHover(Vector2 hudViewportPos, bool hoveringHud)
+	static void UpdateMessageScrollHover(Vector2 hudViewportPos, bool hoveringHud)
 	{
-		if (!uimanager.InConversation || !ConversationVM.WaitingForInput)
+		var needsScrollHover =
+			(uimanager.InConversation && ConversationVM.WaitingForInput)
+			|| MessageDisplay.WaitingForYesOrNo;
+
+		uimanager.CursorOverMessageScroll = needsScrollHover
+			&& hoveringHud
+			&& IsHudPointOverMessageScroll(hudViewportPos);
+	}
+
+	static bool TryConfirmYesNoPrompt(Vector2 hudViewportPos, bool yes)
+	{
+		if (!MessageDisplay.WaitingForYesOrNo || !IsHudPointOverMessageScroll(hudViewportPos))
 		{
-			uimanager.CursorOverMessageScroll = false;
-			return;
+			return false;
 		}
 
-		uimanager.CursorOverMessageScroll = hoveringHud && IsHudPointOverMessageScroll(hudViewportPos);
+		MessageDisplay.ConfirmYesNoResponse(yes);
+		return true;
 	}
 
 	static bool IsHudPointOverMessageScroll(Vector2 hudViewportPos)

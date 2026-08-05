@@ -44,6 +44,27 @@ namespace Underworld
         public static bool WaitingForYesOrNo = false;
         public static string YesNoOption = "Yes";
 
+        /// <summary>Ends a yes/no prompt. Pass true/false to choose; omit to confirm the current selection.</summary>
+        public static void ConfirmYesNoResponse(bool? yes = null)
+        {
+            if (!WaitingForYesOrNo)
+            {
+                return;
+            }
+
+            if (yes.HasValue)
+            {
+                var text = yes.Value ? "Yes" : "No";
+                uimanager.instance.TypedInput.Text = text;
+                YesNoOption = text;
+            }
+
+            uimanager.instance.scroll.Clear();
+            WaitingForYesOrNo = false;
+            YesNoOption = "";
+            main.cameraPitchGimbal_world?.Set("MOVE", true);
+        }
+
         public RichTextLabel[] OutputControl;
 
         public MessageScrollLine[] Lines = new MessageScrollLine[5];
