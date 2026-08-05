@@ -97,7 +97,10 @@ public static class VrController
 	const float HudPointerMaxDistance = 2.5f;
 	const float MenuTvPointerMaxDistance = 4f;
 	/// <summary>Menu TV attached to XRCamera (head-locked cinema), like VrMirrorScreen.</summary>
-	static readonly Vector3 MenuTvCameraLocalPosition = new(0f, 0f, -2.2f);
+	static Vector3 MenuTvCameraLocalPosition => new(
+		0f,
+		uwsettings.instance.vr_menu_screen_offset_y,
+		-Mathf.Max(1.2f, uwsettings.instance.vr_menu_screen_distance));
 	const float PointerLaserRadius = 0.0025f;
 	const int HudPanelWidthPx = 1280;
 	const int HudPanelHeightPx = 800;
@@ -1032,7 +1035,7 @@ public static class VrController
 		var width = uwsettings.instance.vr_menu_screen_width;
 		if (width <= 0.5f)
 		{
-			width = 2.4f;
+			width = 2.2f;
 		}
 
 		var aspect = (float)HudPanelHeightPx / HudPanelWidthPx;

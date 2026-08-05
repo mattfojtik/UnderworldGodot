@@ -187,9 +187,12 @@ public partial class main : Node3D
 					uimanager.EnableDisable(uimanager.instance.PanelInventory, false);
 					uimanager.EnableDisable(uimanager.instance.ManaFlaskPanel, false);
 					uimanager.EnableDisable(uimanager.instance.HealthFlaskPanel, false);
-					cutsplayer.PlayCutscene(9, uimanager.ReturnToMainMenu);
+					cutsplayer.PlayCutscene(9, () =>
+					{
+						uimanager.AddToMessageScroll(GameStrings.GetString(1, 13));
+						uimanager.ReturnToMainMenu();
+					});
 					XMIMusic.LoadXMI(XMIMusic.IntroTheme);
-					uimanager.AddToMessageScroll(GameStrings.GetString(1, 13));
 				}
 				else
 				{
@@ -1017,26 +1020,17 @@ public partial class main : Node3D
 			{
 				if (keyinput.Pressed)
 				{
-					bool stop = false;
-					//var keyin = keyinput.GetKeycodeWithModifiers();
 					switch (keyinput.Keycode)
 					{
 						case Key.Enter:
-							stop = true;
+							chargen.SubmitNameInput();
 							break;
 						case Key.Backspace:
-							{
-								var text = uimanager.instance.ChargenNameInput.Text;
-								if (text.Length > 0)
-								{
-									text = text.Remove(text.Length - 1);
-									uimanager.instance.ChargenNameInput.Text = text;
-								}
-								break;
-							}
+							chargen.BackspaceNameChar();
+							break;
 						case >= Key.Space and <= Key.Z:
 							{
-								string inputed;// = (char)keyinput.Unicode;
+								string inputed;
 								if (Input.IsPhysicalKeyPressed(Key.Shift))
 								{
 									inputed = ((char)keyinput.Unicode).ToString().ToUpper();
@@ -1045,19 +1039,9 @@ public partial class main : Node3D
 								{
 									inputed = ((char)keyinput.Unicode).ToString().ToLower();
 								}
-								var text = uimanager.instance.ChargenNameInput.Text;
-								if (text.Length < 16)
-								{
-									text += inputed;
-									uimanager.instance.ChargenNameInput.Text = text;
-								}
+								chargen.AppendNameChar(inputed);
 								break;
 							}
-					}
-					if (stop)
-					{//end typed input						
-						MessageDisplay.WaitingForTypedInput = false;
-						chargen.ChargenWaitForInput = false;
 					}
 				}
 			}

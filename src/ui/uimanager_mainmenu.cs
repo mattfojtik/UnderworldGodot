@@ -499,6 +499,7 @@ namespace Underworld
 
 		public void HandleFrontMenuEscape()
 		{
+			VrOnScreenKeyboard.Hide();
 			ToggleMainMenuButtons(true);
 			ToggleSaves(false);
 			EnableDisable(PanelChargen, false);

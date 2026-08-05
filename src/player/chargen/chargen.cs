@@ -99,10 +99,11 @@ namespace Underworld
                     uimanager.clearchargenbuttons();
                     uimanager.EnableDisable(uimanager.instance.ChargenQuestion,false);
                     MessageDisplay.WaitingForTypedInput = true;
-                    uimanager.instance.TypedInput.CaretColumn =uimanager.instance.TypedInput.Text.Length;
+                    uimanager.instance.TypedInput.CaretColumn =uimanager.instance.ChargenNameInput.Text.Length;
                     ChargenWaitForInput = true;
                     uimanager.instance.ChargenNameInput.Text = "";
-                    uimanager.EnableDisable(uimanager.instance.ChargenNameBG,true);                    
+                    uimanager.EnableDisable(uimanager.instance.ChargenNameBG,true);
+                    VrOnScreenKeyboard.Show(uimanager.instance.PanelChargen);
                     uimanager.instance.TypedInput.Text = "";
                     _ = Coroutine.Run(
                             CharNameWaitForInput(),
@@ -407,8 +408,48 @@ namespace Underworld
             {
                 yield return new WaitOneFrame();
             }
+            VrOnScreenKeyboard.Hide();
             ChargenWaitForInput = false;
             SubmitChargenOption(6,0);
+        }
+
+        public static void AppendNameChar(string inputed)
+        {
+            if (!ChargenWaitForInput || string.IsNullOrEmpty(inputed))
+            {
+                return;
+            }
+
+            var text = uimanager.instance.ChargenNameInput.Text;
+            if (text.Length < 16)
+            {
+                uimanager.instance.ChargenNameInput.Text = text + inputed;
+            }
+        }
+
+        public static void BackspaceNameChar()
+        {
+            if (!ChargenWaitForInput)
+            {
+                return;
+            }
+
+            var text = uimanager.instance.ChargenNameInput.Text;
+            if (text.Length > 0)
+            {
+                uimanager.instance.ChargenNameInput.Text = text.Remove(text.Length - 1);
+            }
+        }
+
+        public static void SubmitNameInput()
+        {
+            if (!ChargenWaitForInput)
+            {
+                return;
+            }
+
+            MessageDisplay.WaitingForTypedInput = false;
+            ChargenWaitForInput = false;
         }
     }//end class
 }// end namespace

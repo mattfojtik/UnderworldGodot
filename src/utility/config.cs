@@ -87,7 +87,11 @@ public class uwsettings
     /// </summary>
     public string vr_boot_mode { get; set; } = "explore";
     /// <summary>Width of the front-menu TV quad in metres (vr_boot_mode "full").</summary>
-    public float vr_menu_screen_width { get; set; } = 2.4f;
+    public float vr_menu_screen_width { get; set; } = 2.2f;
+    /// <summary>Distance from the headset to the menu TV quad in metres.</summary>
+    public float vr_menu_screen_distance { get; set; } = 2.5f;
+    /// <summary>Vertical offset of the menu TV in metres (negative lowers the screen).</summary>
+    public float vr_menu_screen_offset_y { get; set; } = -0.4f;
     public bool VrBootExplore =>
         !vr_boot_mode.Equals("full", StringComparison.OrdinalIgnoreCase);
     public bool VrBootFull =>

@@ -93,7 +93,19 @@
         "vr_menu_screen_width": {
             "description": "Width of the front-menu TV quad in metres (vr_boot_mode full).",
             "type": "number",
-            "default": 2.4
+            "default": 2.2
+        },
+
+        "vr_menu_screen_distance": {
+            "description": "Distance from the headset to the menu TV quad in metres (vr_boot_mode full).",
+            "type": "number",
+            "default": 2.5
+        },
+
+        "vr_menu_screen_offset_y": {
+            "description": "Vertical offset of the menu TV in metres; negative lowers the screen.",
+            "type": "number",
+            "default": -0.4
         },
 
         "synth": {
