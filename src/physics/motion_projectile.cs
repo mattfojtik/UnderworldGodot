@@ -22,6 +22,8 @@ namespace Underworld
         public static bool MissileFlagA;
         public static bool MissileFlagB;
 
+        /// <summary>When true, projectile heading comes only from MissileHeading (VR laser throw).</summary>
+        public static bool UseAbsoluteProjectileHeading;
 
         /// <summary>
         /// Translate mouse x/y values into a pitch and heading for the projectile to follow by dividing the 3d window in to a grid of discrete pitches and yaws
@@ -87,11 +89,16 @@ namespace Underworld
                 projectile.is_quant = 1;
                 projectile.link = 1;  //?
 
-                if (MissileLauncherHeadingBase != 0)
+                if (!UseAbsoluteProjectileHeading)
                 {
-                    MissileLauncherHeadingBase = Launcher.npc_heading;
+                    if (MissileLauncherHeadingBase != 0)
+                    {
+                        MissileLauncherHeadingBase = Launcher.npc_heading;
+                    }
+
+                    MissileLauncherHeadingBase = MissileLauncherHeadingBase + (Launcher.heading << 5);
                 }
-                MissileLauncherHeadingBase = MissileLauncherHeadingBase + (Launcher.heading << 5);
+
                 MissileLauncherHeadingBase = (MissileHeading + MissileLauncherHeadingBase + 0x100) & 0xFF;
 
                 ObjectCreator.InitMobileObject(projectile, motion.projectileXHome, motion.projectileYHome);

@@ -58,6 +58,10 @@ public static class VrController
 	static bool _hudPointerRightWasPressed;
 	static bool _worldPointerLeftWasPressed;
 	static bool _worldPointerRightWasPressed;
+	static float _pendingPickupRayDistance;
+	static int _vrHeldObjectIndex = -1;
+	static float _vrHeldRayDistance = 1f;
+	const float InventoryHeldRayDistance = 1.2f;
 	static main _gameRoot;
 	static SceneTree _sceneTree;
 	static float _snapTurnCooldown;
@@ -670,6 +674,7 @@ public static class VrController
 
 		ApplyHudPointerInput();
 		ApplyWorldPointerInput();
+		UpdateHeldObjectVisual();
 		ApplyVrShortcutInput();
 		ApplyDoorInteraction();
 	}
@@ -979,6 +984,20 @@ public static class VrController
 		};
 	}
 
+	static void ApplyMenuTvMaterialBrightness(StandardMaterial3D mat)
+	{
+		if (mat == null)
+		{
+			return;
+		}
+
+		var brightness = Mathf.Max(1f, uwsettings.instance.vr_menu_screen_brightness);
+		mat.AlbedoColor = new Color(brightness, brightness, brightness);
+		mat.EmissionEnabled = true;
+		mat.Emission = new Color(0.15f * brightness, 0.15f * brightness, 0.18f * brightness);
+		mat.EmissionEnergyMultiplier = 0.65f;
+	}
+
 	static void UpdateXrViewportHdrForUiMode()
 	{
 		if (_sceneTree?.Root?.GetViewport() is not Viewport rootVp || !rootVp.UseXR)
@@ -1052,6 +1071,10 @@ public static class VrController
 				CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
 				Layers = main.LayerGeo | main.LayerXFER,
 			};
+			if (_hudPanel.Mesh is QuadMesh newQuad && newQuad.Material is StandardMaterial3D menuMat)
+			{
+				ApplyMenuTvMaterialBrightness(menuMat);
+			}
 		}
 		else
 		{
@@ -1060,6 +1083,10 @@ public static class VrController
 			if (_hudPanel.Mesh is QuadMesh quad)
 			{
 				quad.Material = CreateVrUiQuadMaterial();
+				if (quad.Material is StandardMaterial3D menuMat)
+				{
+					ApplyMenuTvMaterialBrightness(menuMat);
+				}
 			}
 		}
 
@@ -1961,6 +1988,36 @@ public static class VrController
 		return GetHeadYawForMotion();
 	}
 
+	/// <summary>Convert a horizontal laser direction to the UW heading byte used by motion/drop.</summary>
+	public static int GetUwHeadingByteFromRay(Vector3 rayDir)
+	{
+		rayDir = rayDir.Normalized();
+		var gameDx = -rayDir.X;
+		var gameDy = rayDir.Z;
+		if (gameDx * gameDx + gameDy * gameDy < 1e-6f)
+		{
+			return (playerdat.PlayerCameraYaw_dseg_8294 >> 8) & 0xFF;
+		}
+
+		var gameYawRad = Mathf.Atan2(gameDx, gameDy);
+		var yaw = (short)(gameYawRad / Math.PI * 32767f);
+		return (yaw >> 8) & 0xFF;
+	}
+
+	/// <summary>Convert laser elevation to UW missile pitch (independent of avatar facing).</summary>
+	public static int GetUwPitchFromRay(Vector3 rayDir)
+	{
+		rayDir = rayDir.Normalized();
+		var horizLen = Mathf.Sqrt(rayDir.X * rayDir.X + rayDir.Z * rayDir.Z);
+		if (horizLen < 1e-5f)
+		{
+			return playerdat.PlayerCameraPitch_dseg_67d6_33D6 / 0x300;
+		}
+
+		var elevDeg = Mathf.RadToDeg(Mathf.Atan2(rayDir.Y, horizLen));
+		return (int)Mathf.Clamp(elevDeg / 6f, -4f, 16f);
+	}
+
 	public static void UpdateVisionHeadingFromYaw(short yaw)
 	{
 		playerdat.CameraYawHeadingRelated_2B52 = (short)(((1 + (yaw >> 0xD)) & 0x7) >> 1);
@@ -2045,7 +2102,8 @@ public static class VrController
 			return;
 		}
 
-		var show = IsActive && !uwsettings.instance.vr_mirror && uwsettings.instance.vr_show_body;
+		var show = IsActive && !uwsettings.instance.vr_mirror && uwsettings.instance.vr_show_body
+			&& uimanager.InGame && !UsesFrontMenuScreen;
 		_bodyMarker.Visible = show;
 		if (!show)
 		{
@@ -2067,7 +2125,7 @@ public static class VrController
 			capsule.Height = bodyHeight;
 		}
 
-		_bodyMarker.GlobalPosition = displayFloor + Vector3.Up * (bodyHeight * 0.5f);
+		_bodyMarker.GlobalPosition = GetAvatarBodyCenter();
 		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
 		_bodyMarker.Rotation = new Vector3(0f, bodyYaw, 0f);
 	}
@@ -2131,6 +2189,8 @@ public static class VrController
 
 		var rayOrigin = _rightController.GlobalPosition;
 		var rayDir = GetControllerRayDir();
+		UpdateGameplayPointerLaser(rayOrigin, rayDir);
+
 		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
 		var inAttackMode = uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
 
@@ -2139,7 +2199,7 @@ public static class VrController
 		if (inAttackMode)
 		{
 			IsVrWorldPointerActive = true;
-			UpdateViewPortMouseFromControllerAim(rayDir);
+			UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
 			IsVrWorldRightHeld = rightPressed;
 			_worldPointerRightWasPressed = rightPressed;
 
@@ -2153,7 +2213,7 @@ public static class VrController
 		}
 
 		IsVrWorldPointerActive = true;
-		UpdateViewPortMouseFromControllerAim(rayDir);
+		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
 
 		var leftPressedInteract = IsButtonPressed(_rightController, HudLeftClickActions);
 		if (leftPressedInteract && !_worldPointerLeftWasPressed)
@@ -2178,15 +2238,226 @@ public static class VrController
 		uimanager.SetViewPortMouseFromUwLocal(new Vector2(xNorm * vp.Size.X, yNorm * vp.Size.Y));
 	}
 
-	static float GetInteractRayDistance()
+	/// <summary>Map controller ray to flat throw/drop mouse coords via the game camera frustum.</summary>
+	static void UpdateViewPortMouseFromControllerRay(Vector3 rayOrigin, Vector3 rayDir)
 	{
-		var maxDist = uimanager.RayDistance;
-		if (maxDist <= 0f)
+		var cam = uimanager.instance?.cam;
+		if (cam == null)
 		{
-			maxDist = 3f;
+			UpdateViewPortMouseFromControllerAim(rayDir);
+			return;
 		}
 
-		return maxDist * tileMapRender.TileWidth;
+		rayDir = rayDir.Normalized();
+		var forward = -cam.GlobalTransform.Basis.Z;
+		var denom = forward.Dot(rayDir);
+		Vector3 aimPoint;
+		if (Mathf.Abs(denom) < 1e-5f)
+		{
+			aimPoint = rayOrigin + rayDir * 2f;
+		}
+		else
+		{
+			var t = forward.Dot(cam.GlobalPosition - rayOrigin) / denom;
+			if (t < 0.05f)
+			{
+				t = 2f;
+			}
+
+			aimPoint = rayOrigin + rayDir * t;
+		}
+
+		var screen = cam.UnprojectPosition(aimPoint);
+		uimanager.SetViewPortMouseFromUwLocal(screen);
+	}
+
+	/// <summary>Called when an object is picked up via the VR laser (stores ray distance).</summary>
+	public static void NotifyObjectPickedUp(int objectIndex, float rayDistance)
+	{
+		if (!IsActive || objectIndex <= 0)
+		{
+			return;
+		}
+
+		_vrHeldObjectIndex = objectIndex;
+		_vrHeldRayDistance = Mathf.Clamp(rayDistance, 0.15f, GetMaxReachAlongRay(
+			_rightController?.GlobalPosition ?? GetAvatarBodyCenter(),
+			GetControllerRayDir()));
+	}
+
+	/// <summary>Held object visual when taking an item out of inventory (fixed laser depth).</summary>
+	public static void NotifyObjectPickedUpFromInventory(int objectIndex)
+	{
+		NotifyObjectPickedUp(objectIndex, InventoryHeldRayDistance);
+	}
+
+	public static float GetPendingPickupRayDistance() => _pendingPickupRayDistance;
+
+	static void ClearHeldObjectVisual()
+	{
+		_vrHeldObjectIndex = -1;
+		_pendingPickupRayDistance = 0f;
+	}
+
+	static void SetHeldObjectNodeVisible(bool visible)
+	{
+		if (_vrHeldObjectIndex <= 0)
+		{
+			return;
+		}
+
+		var objList = UWTileMap.current_tilemap?.LevelObjects;
+		if (objList == null || _vrHeldObjectIndex >= objList.Length)
+		{
+			return;
+		}
+
+		var obj = objList[_vrHeldObjectIndex];
+		var node = obj?.instance?.uwnode;
+		if (node != null)
+		{
+			node.Visible = visible;
+		}
+	}
+
+	static void UpdateHeldObjectVisual()
+	{
+		if (!IsActive || !uimanager.InGame || playerdat.ObjectInHand == -1)
+		{
+			if (_vrHeldObjectIndex != -1)
+			{
+				ClearHeldObjectVisual();
+			}
+
+			return;
+		}
+
+		if (_vrHeldObjectIndex != playerdat.ObjectInHand)
+		{
+			_vrHeldObjectIndex = playerdat.ObjectInHand;
+			if (_pendingPickupRayDistance > 0.15f)
+			{
+				_vrHeldRayDistance = _pendingPickupRayDistance;
+			}
+		}
+
+		if (_rightController == null)
+		{
+			return;
+		}
+
+		// HUD panel already shows the held sprite while the laser is over it.
+		if (_hudPointerHovering)
+		{
+			SetHeldObjectNodeVisible(false);
+			return;
+		}
+
+		var objList = UWTileMap.current_tilemap?.LevelObjects;
+		if (objList == null || _vrHeldObjectIndex <= 0 || _vrHeldObjectIndex >= objList.Length)
+		{
+			return;
+		}
+
+		var obj = objList[_vrHeldObjectIndex];
+		if (obj.instance == null)
+		{
+			obj.tileX = 99;
+			obj.tileY = 99;
+			objectInstance.RedrawFull(obj);
+		}
+
+		var node = obj?.instance?.uwnode;
+		if (node == null)
+		{
+			return;
+		}
+
+		var rayOrigin = _rightController.GlobalPosition;
+		var rayDir = GetControllerRayDir().Normalized();
+		var holdPos = rayOrigin + rayDir * _vrHeldRayDistance;
+		node.Visible = true;
+		node.GlobalPosition = holdPos;
+		if (_xrCamera != null)
+		{
+			node.LookAt(_xrCamera.GlobalPosition, Vector3.Up);
+		}
+	}
+
+	static float GetCanReachWorldRadius()
+	{
+		var threshold = uimanager.InteractionMode == uimanager.InteractionModes.ModePickup
+			? playerdat.PickupDistance
+			: playerdat.UseDistance;
+		if (threshold <= 0)
+		{
+			// Telekinesis / unlimited — match flat raycast length (world metres, not × tile width).
+			var rayDist = uimanager.RayDistance;
+			return rayDist > 0f ? rayDist : 3f;
+		}
+
+		// CanReach compares x²+y² to threshold in UW sub-tile units (8 per tile).
+		return Mathf.Sqrt(threshold) * (tileMapRender.TileWidth / 8f);
+	}
+
+	static float GetInteractRayDistance()
+	{
+		switch (uimanager.InteractionMode)
+		{
+			case uimanager.InteractionModes.ModeLook:
+				return GetLookVisionWorldDistance();
+			case uimanager.InteractionModes.ModeTalk:
+				return uimanager.RayDistance > 0f ? uimanager.RayDistance : 8f;
+			case uimanager.InteractionModes.ModeAttack:
+				return uimanager.RayDistance > 0f ? uimanager.RayDistance : 1f;
+			default:
+				return GetCanReachWorldRadius();
+		}
+	}
+
+	/// <summary>Avatar torso center — same anchor as the cyan body marker.</summary>
+	static Vector3 GetAvatarBodyCenter()
+	{
+		var px = motion.playerMotionParams.x_0;
+		var py = motion.playerMotionParams.y_2;
+		var pz = motion.playerMotionParams.z_4;
+		var displayFloor = GetDisplayFloorPos();
+		var simFeet = uwObject.XYZToVector3(px, py, pz);
+		var eye = uwObject.XYZToVector3(px, py, pz + 0xA4);
+		var bodyHeight = Mathf.Max(0.2f, eye.Y - simFeet.Y);
+		return displayFloor + Vector3.Up * (bodyHeight * 0.5f);
+	}
+
+	/// <summary>How far the controller laser may extend along a ray before exceeding pick reach from the avatar.</summary>
+	static float GetMaxReachAlongRay(Vector3 rayOrigin, Vector3 rayDir)
+	{
+		rayDir = rayDir.Normalized();
+		var maxReach = GetInteractRayDistance();
+		var offset = rayOrigin - GetAvatarBodyCenter();
+		var alongDir = offset.Dot(rayDir);
+		var c = offset.LengthSquared() - maxReach * maxReach;
+		var discriminant = alongDir * alongDir - c;
+		if (discriminant < 0f)
+		{
+			return 0.01f;
+		}
+
+		var sqrtDisc = Mathf.Sqrt(discriminant);
+		var t = -alongDir + sqrtDisc;
+		if (t <= 0.01f)
+		{
+			t = -alongDir - sqrtDisc;
+		}
+
+		return Mathf.Max(0.01f, t);
+	}
+
+	/// <summary>Gameplay laser: reach is anchored to the avatar; arm extension shortens the beam.</summary>
+	static void UpdateGameplayPointerLaser(Vector3 rayOrigin, Vector3 rayDir)
+	{
+		rayDir = rayDir.Normalized();
+		var laserT = GetMaxReachAlongRay(rayOrigin, rayDir);
+		UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * laserT, visible: true);
 	}
 
 	static void TryInteractLaserPick(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
@@ -2209,9 +2480,10 @@ public static class VrController
 		{
 			var objToThrow = UWTileMap.current_tilemap.LevelObjects[playerdat.ObjectInHand];
 			var itemid = objToThrow.item_id;
-			if (pickup.DropObjectByPlayer(objToThrow, true))
+			if (pickup.DropObjectByPlayer(objToThrow, true, rayDir))
 			{
 				playerdat.ObjectInHand = -1;
+				ClearHeldObjectVisual();
 				uimanager.instance.mousecursor.SetCursorToCursor();
 				pickup.DropSpecialCases(itemid);
 			}
@@ -2228,7 +2500,7 @@ public static class VrController
 		}
 
 		rayDir = rayDir.Normalized();
-		var maxDist = GetInteractRayDistance();
+		var maxDist = GetMaxReachAlongRay(rayOrigin, rayDir);
 		var bestT = maxDist;
 		var bestObjectIndex = 0;
 		var bestTileFace = 0;
@@ -2271,6 +2543,7 @@ public static class VrController
 		switch (bestPick)
 		{
 			case LaserPickKind.Object:
+				_pendingPickupRayDistance = bestT;
 				InteractWithLaserObject(bestObjectIndex, leftClick, rayOrigin + rayDir * bestT);
 				return;
 			case LaserPickKind.Tile:
@@ -2301,7 +2574,8 @@ public static class VrController
 		var visionTiles = VisionParams.DistanceToWallOrDarkness;
 		if (visionTiles < 0)
 		{
-			return GetInteractRayDistance();
+			var lookRay = uimanager.RayDistance;
+			return (lookRay > 0f ? lookRay : 3f) * tileMapRender.TileWidth;
 		}
 
 		return (visionTiles + 1) * tileMapRender.TileWidth;
@@ -2881,7 +3155,14 @@ public static class VrController
 		}
 
 		var laserEnd = hovering ? hitWorld : rayOrigin + rayDir * pointerMaxDistance;
-		UpdatePointerLaser(rayOrigin, laserEnd, visible: true);
+		if (menuOnly || menuScreen || hovering)
+		{
+			UpdatePointerLaser(rayOrigin, laserEnd, visible: true);
+		}
+		else if (!_hudPanelVisible)
+		{
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+		}
 
 		if (hovering)
 		{

@@ -657,10 +657,20 @@ namespace Underworld
                     );
             var pickObject = UWTileMap.current_tilemap.LevelObjects[newIndex];
             pickObject.next = 0;
+            pickObject.tileX = 99;
+            pickObject.tileY = 99;
+            if (pickObject.instance == null)
+            {
+                objectInstance.RedrawFull(pickObject);
+            }
             if (ChangeHand)
             {
                 playerdat.ObjectInHand = newIndex;
                 instance.mousecursor.SetCursorToObject(pickObject.item_id);
+                if (VrController.IsActive)
+                {
+                    VrController.NotifyObjectPickedUpFromInventory(newIndex);
+                }
             }
             playerdat.PlayerStatusUpdate();//check if any enchantments need to be updated
             return newIndex;

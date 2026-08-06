@@ -92,6 +92,8 @@ public class uwsettings
     public float vr_menu_screen_distance { get; set; } = 2.5f;
     /// <summary>Vertical offset of the menu TV in metres (negative lowers the screen).</summary>
     public float vr_menu_screen_offset_y { get; set; } = -0.4f;
+    /// <summary>Brightness multiplier for the intro/menu TV quad (1 = unchanged).</summary>
+    public float vr_menu_screen_brightness { get; set; } = 1.45f;
     public bool VrBootExplore =>
         !vr_boot_mode.Equals("full", StringComparison.OrdinalIgnoreCase);
     public bool VrBootFull =>

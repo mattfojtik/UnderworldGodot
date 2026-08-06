@@ -13,6 +13,21 @@ namespace Underworld
 
         public static bool DropObjectByPlayer(uwObject srcObject, bool printMessage)
         {
+            return DropObjectByPlayer(srcObject, printMessage, null);
+        }
+
+        public static bool DropObjectByPlayer(uwObject srcObject, bool printMessage, Godot.Vector3? laserRayDir)
+        {
+            if (VrController.IsActive && laserRayDir.HasValue)
+            {
+                return DropObjectFromLaserRay(srcObject, laserRayDir.Value, printMessage);
+            }
+
+            return DropObjectByPlayerFlat(srcObject, printMessage);
+        }
+
+        static bool DropObjectByPlayerFlat(uwObject srcObject, bool printMessage)
+        {
             uwObject ThrownObject = null;
             motion.projectileXHome = playerdat.playerObject.npc_xhome;
             motion.projectileYHome = playerdat.playerObject.npc_yhome;
@@ -137,6 +152,133 @@ namespace Underworld
 
             //seg027_2856_845:
             return (srcObject == null);
+        }
+
+        /// <summary>VR throw/drop using controller laser direction only (not avatar/head facing).</summary>
+        static bool DropObjectFromLaserRay(uwObject srcObject, Godot.Vector3 rayDir, bool printMessage)
+        {
+            uwObject ThrownObject = null;
+            motion.projectileXHome = playerdat.playerObject.npc_xhome;
+            motion.projectileYHome = playerdat.playerObject.npc_yhome;
+
+            rayDir = rayDir.Normalized();
+            var headingByte = VrController.GetUwHeadingByteFromRay(rayDir);
+            var pitch = VrController.GetUwPitchFromRay(rayDir);
+            var isThrow = rayDir.Y > -0.35f;
+
+            if (isThrow)
+            {
+                motion.MissileLauncherHeadingBase = 0;
+                motion.MissileHeading = headingByte;
+                motion.MissilePitch = pitch;
+                motion.UseAbsoluteProjectileHeading = true;
+                motion.RangedAmmoItemID = srcObject.item_id;
+                motion.RangedAmmoType = 0xF;
+                ThrownObject = motion.PrepareProjectileObject(playerdat.playerObject);
+                motion.UseAbsoluteProjectileHeading = false;
+                if (ThrownObject != null)
+                {
+                    ThrownObject.is_quant = srcObject.is_quant;
+                    ThrownObject.link = srcObject.link;
+                    ThrownObject.flags_full = srcObject.flags_full;
+                    ThrownObject.quality = srcObject.quality;
+                    ThrownObject.owner = srcObject.owner;
+                    ThrownObject.doordir = srcObject.doordir;
+                    if (ThrownObject.majorclass != 5)
+                    {
+                        if (commonObjDat.rendertype(srcObject.item_id) != 2)
+                        {
+                            ThrownObject.npc_whoami = srcObject.heading;
+                        }
+                    }
+
+                    objectInstance.RedrawFull(ThrownObject);
+                    ObjectFreeLists.ReleaseFreeObject(srcObject);
+                    srcObject = null;
+                }
+            }
+
+            if (srcObject != null)
+            {
+                var cannotFit = false;
+                int x_ToSpawnIn = (motion.projectileXHome << 3) + playerdat.playerObject.xpos;
+                int y_toSpawnIn = (motion.projectileYHome << 3) + playerdat.playerObject.ypos;
+                var distance = commonObjDat.radius(playerdat.playerObject.item_id) + commonObjDat.radius(srcObject.item_id) + 1;
+                srcObject.zpos = playerdat.playerObject.zpos;
+                motion.GetCoordinateInDirection(
+                    heading: headingByte,
+                    distance: distance,
+                    X0: ref x_ToSpawnIn,
+                    Y0: ref y_toSpawnIn);
+
+                cannotFit = !motion.TestIfObjectFitsInTile(srcObject.item_id, 0, x_ToSpawnIn, y_toSpawnIn, playerdat.playerObject.zpos, 1, distance);
+                if (!cannotFit)
+                {
+                    motion.GetCoordinateInDirection(
+                        heading: headingByte,
+                        distance: 3,
+                        X0: ref x_ToSpawnIn,
+                        Y0: ref y_toSpawnIn);
+                    cannotFit = !motion.TestIfObjectFitsInTile(srcObject.item_id, 0, x_ToSpawnIn, y_toSpawnIn, playerdat.playerObject.zpos, 1, distance);
+                }
+
+                var tileX = x_ToSpawnIn >> 3;
+                var tileY = y_toSpawnIn >> 3;
+                var tile = UWTileMap.current_tilemap.Tiles[tileX, tileY];
+                if (!cannotFit)
+                {
+                    srcObject.xpos = (short)(x_ToSpawnIn & 7);
+                    srcObject.ypos = (short)(y_toSpawnIn & 7);
+                    srcObject.next = tile.indexObjectList;
+                    tile.indexObjectList = srcObject.index;
+                    srcObject.tileX = tileX;
+                    srcObject.tileY = tileY;
+
+                    if (srcObject.OneF0Class == 9)
+                    {
+                        if (srcObject.classindex >= 4 && srcObject.classindex <= 6)
+                        {
+                            srcObject.item_id -= 4;
+                        }
+                    }
+
+                    objectInstance.RedrawFull(srcObject);
+
+                    var objectAfterCollision = motion.PlacedObjectCollision_seg030_2BB7_10BC(
+                        projectile: srcObject,
+                        tileX: tileX,
+                        tileY: tileY,
+                        arg8: 1);
+                    if (objectAfterCollision != null)
+                    {
+                        objectInstance.RedrawFull(objectAfterCollision);
+                        if (objectAfterCollision.IsStatic && _RES == GAME_UW2)
+                        {
+                            trigger.RunPressureEnterExitTriggersInTile(
+                                triggeringObject: objectAfterCollision,
+                                tile: tile,
+                                ZParam: objectAfterCollision.zpos,
+                                triggerType: (int)triggerObjectDat.triggertypes.PRESSURE);
+                        }
+                    }
+
+                    srcObject = null;
+                }
+                else if (printMessage)
+                {
+                    uimanager.AddToMessageScroll(GameStrings.GetString(1, GameStrings.str_there_is_no_space_to_drop_that_));
+                    if (_RES == GAME_UW2)
+                    {
+                        UWsoundeffects.PlaySoundEffectAtAvatar(UWsoundeffects.SoundEffectFail, 0x40, 0);
+                    }
+                    else
+                    {
+                        UWsoundeffects.PlaySoundEffectAtAvatar(UWsoundeffects.SoundEffectLanding, 0x40, 0);
+                    }
+                }
+            }
+
+            return srcObject == null;
         }
 
 
@@ -394,6 +536,11 @@ namespace Underworld
             else
             {
                 Debug.Print($"Trying to pick up {obj.a_name} without an instance!");
+            }
+
+            if (VrController.IsActive)
+            {
+                VrController.NotifyObjectPickedUp(index, VrController.GetPendingPickupRayDistance());
             }
         }
 
