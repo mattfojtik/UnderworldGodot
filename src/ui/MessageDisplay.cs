@@ -196,7 +196,18 @@ namespace Underworld
                 }
             }
 
-            OutputControl[0].Text = output;
+            if (OutputControl == null)
+            {
+                return;
+            }
+
+            foreach (var ctl in OutputControl)
+            {
+                if (ctl != null)
+                {
+                    ctl.Text = output;
+                }
+            }
         }
 
         public IEnumerator AddText(string newText, int option = -1, int colour = 0)

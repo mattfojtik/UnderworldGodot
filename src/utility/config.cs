@@ -129,6 +129,10 @@ public class uwsettings
     public bool vr_hud_panel { get; set; } = true;
     /// <summary>Width of the left-hand HUD quad in metres (height follows 1280×800 aspect).</summary>
     public float vr_hud_panel_width { get; set; } = 0.42f;
+    /// <summary>Native VR: show the message scroll in front of the player (head-locked).</summary>
+    public bool vr_message_scroll_panel { get; set; } = true;
+    /// <summary>Width of the head-locked message scroll quad in metres.</summary>
+    public float vr_message_scroll_width { get; set; } = 1.05f;
     public float FOV { get; set; } = 75;
     public bool showcolliders { get; set; }
     public int shaderbandsize { get; set; } = 8;
