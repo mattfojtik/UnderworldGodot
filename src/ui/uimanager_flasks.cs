@@ -73,6 +73,7 @@ namespace Underworld
             {
                 CurrentHealthFlaskLevel--;
                 RedrawHealthFlask();
+                VrController.NotifyVrHealthFlaskDamage();
             }
             else
             {

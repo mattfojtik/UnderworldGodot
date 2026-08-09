@@ -958,6 +958,7 @@ namespace Underworld
         public static IEnumerator RunCutscene(int CutsceneNo, CallBacks.CutsceneCallBack callBackMethod = null, bool useSingleRedChannel = false)
         {
             var OrigGameMode = uimanager.CurrentGameMode;
+            var wasInGame = OrigGameMode == uimanager.GameModes.GAME;
             uimanager.CurrentGameMode = uimanager.GameModes.CUTSCENE;
             MessageDisplay.WaitingForMore = false;
             Debug.Print($"Running cutscene {CutsceneNo}");
@@ -971,6 +972,10 @@ namespace Underworld
             uimanager.EnableDisable(cutscontrol, true);
             uimanager.EnableDisable(uimanager.instance.CutsSubtitle, true);
             uimanager.instance.CutsSubtitle.Text = "";
+
+            var vrCinemaEntered = VrController.ShouldEnterCinemaForCutscene(CutsceneNo, wasInGame)
+                && VrController.EnterVrCinemaScreen();
+            var vrCinemaReturnToHandHud = CutsceneNo == 0x102;
 
             FrameNo = 0;
             currentFileExt = 1;
@@ -1568,6 +1573,11 @@ namespace Underworld
             uimanager.CurrentGameMode = OrigGameMode;//restore gamemode before any new cutscenes start.
             uimanager.EnableDisable(cutscontrol, false);
             uimanager.EnableDisable(uimanager.instance.CutsSubtitle, false);
+
+            if (vrCinemaEntered)
+            {
+                VrController.ExitVrCinemaScreen(vrCinemaReturnToHandHud);
+            }
 
             if ((cancelRequested) && (_RES == GAME_UW2) && (CutsceneNo == 0))
             {

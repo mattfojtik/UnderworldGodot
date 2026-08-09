@@ -129,10 +129,32 @@ public class uwsettings
     public bool vr_hud_panel { get; set; } = true;
     /// <summary>Width of the left-hand HUD quad in metres (height follows 1280×800 aspect).</summary>
     public float vr_hud_panel_width { get; set; } = 0.42f;
-    /// <summary>Native VR: show the message scroll in front of the player (head-locked).</summary>
-    public bool vr_message_scroll_panel { get; set; } = true;
-    /// <summary>Width of the head-locked message scroll quad in metres.</summary>
-    public float vr_message_scroll_width { get; set; } = 1.05f;
+    /// <summary>Native VR: head-locked overlays (message scroll, health flask, attack gem, eyes/gargoyle).</summary>
+    public bool vr_status_panels { get; set; } = true;
+    /// <summary>When true, head overlays stay visible instead of appearing on events and fading out.</summary>
+    public bool vr_status_panels_always_visible { get; set; } = false;
+    /// <summary>Seconds to show head overlays after activity before fading (when not always visible).</summary>
+    public float vr_status_panels_display_seconds { get; set; } = 5f;
+    /// <summary>Seconds for head overlay fade-out (when not always visible).</summary>
+    public float vr_status_panels_fade_seconds { get; set; } = 0.75f;
+    /// <summary>Virtual HUD screen width in metres for head-locked overlays (scroll, flask, gem, eyes).</summary>
+    public float vr_status_screen_width { get; set; } = 2.2f;
+    /// <summary>Distance in front of the headset for head-locked overlays.</summary>
+    public float vr_status_screen_distance { get; set; } = 1.35f;
+    /// <summary>Vertical offset applied to all head overlays in metres (negative lowers the whole group).</summary>
+    public float vr_status_panels_offset_y { get; set; } = 0f;
+    /// <summary>Head-locked message scroll offset in metres (X = right, Y = up).</summary>
+    public float vr_message_scroll_offset_x { get; set; } = 0f;
+    public float vr_message_scroll_offset_y { get; set; } = -0.18f;
+    /// <summary>Head-locked health flask offset in metres (X = right, Y = up).</summary>
+    public float vr_health_flask_offset_x { get; set; } = 0f;
+    public float vr_health_flask_offset_y { get; set; } = -0.18f;
+    /// <summary>Head-locked attack power gem offset in metres (X = right, Y = up).</summary>
+    public float vr_power_gem_offset_x { get; set; } = 0f;
+    public float vr_power_gem_offset_y { get; set; } = -0.18f;
+    /// <summary>Head-locked enemy-health eyes/gargoyle offset in metres (X = right, Y = up).</summary>
+    public float vr_eyes_offset_x { get; set; } = 0f;
+    public float vr_eyes_offset_y { get; set; } = -0.18f;
     public float FOV { get; set; } = 75;
     public bool showcolliders { get; set; }
     public int shaderbandsize { get; set; } = 8;

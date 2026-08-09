@@ -73,7 +73,8 @@ namespace Underworld
             {
                 frameno = Math.Min(10,frameno);
             }
-            PowerGem.Texture = grPower.LoadImageAt(frameno); 
+            PowerGem.Texture = grPower.LoadImageAt(frameno);
+            VrController.NotifyVrPowerGemUpdated();
         }
 
         public static void ResetPower()

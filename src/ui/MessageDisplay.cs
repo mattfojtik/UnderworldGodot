@@ -208,6 +208,11 @@ namespace Underworld
                     ctl.Text = output;
                 }
             }
+
+            if (uimanager.instance?.scroll == this)
+            {
+                VrController.NotifyMessageScrollUpdated();
+            }
         }
 
         public IEnumerator AddText(string newText, int option = -1, int colour = 0)

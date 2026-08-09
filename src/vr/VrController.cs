@@ -7,7 +7,7 @@ namespace Underworld;
 /// Minimal VR support: OpenXR head tracking with thumbstick locomotion.
 /// Enable via "vr": true in settings.json (user://settings.json).
 /// </summary>
-public static class VrController
+public static partial class VrController
 {
 	public static bool IsActive { get; private set; }
 
@@ -46,15 +46,21 @@ public static class VrController
 	static MeshInstance3D _messageScrollPanel;
 	static SubViewport _messageScrollViewport;
 	static StandardMaterial3D _messageScrollMaterial;
+	static float _messageScrollHideAfterTime = -1f;
+	static float _messageScrollAlpha;
+	static bool _messageScrollHoldWasActive;
 	static CanvasLayer _hudMouseLayer;
 	static bool _vrUiOnMenuTv;
+	static bool _vrCinemaFromGameplay;
 	static bool _vrGameplayEnterPending;
 	static bool _vrShortcutTriggerWasPressed;
 	static bool _vrEscapeWasPressed;
 	static MeshInstance3D _pointerLaser;
 	static CylinderMesh _pointerLaserMesh;
 	static bool _hudPanelVisible = true;
+	static bool _headOverlaysVisible = true;
 	static bool _hudMenuToggleWasPressed;
+	static bool _hudPanelToggleWasPressed;
 	static Vector2 _lastHudPointerPos = new(-1f, -1f);
 	static bool _hudPointerHovering;
 	static bool _hudPointerLeftWasPressed;
@@ -103,9 +109,6 @@ public static class VrController
 	const float DoorUseCooldownSeconds = 0.35f;
 	const float HudPointerMaxDistance = 2.5f;
 	const float MenuTvPointerMaxDistance = 4f;
-	const float MessageScrollPanelDistance = 1.35f;
-	const float MessageScrollPanelOffsetY = -0.32f;
-	/// <summary>Menu TV attached to XRCamera (head-locked cinema), like VrMirrorScreen.</summary>
 	static Vector3 MenuTvCameraLocalPosition => new(
 		0f,
 		uwsettings.instance.vr_menu_screen_offset_y,
@@ -156,11 +159,17 @@ public static class VrController
 		"x_button",
 	};
 
-	// Left-hand by_button is Quest Y (menu toggle).
-	static readonly StringName[] HudMenuToggleButtonActions =
+	// Left-hand by_button is Quest Y (head overlay toggle).
+	static readonly StringName[] HeadOverlayToggleButtonActions =
 	{
 		"by_button",
 		"y_button",
+	};
+
+	// Left-hand menu button (HUD panel toggle).
+	static readonly StringName[] HudPanelToggleButtonActions =
+	{
+		"menu_button",
 	};
 
 	static readonly StringName[] HudLeftClickActions =
@@ -682,6 +691,7 @@ public static class VrController
 		ApplyWorldPointerInput();
 		UpdateHeldObjectVisual();
 		UpdateMessageScrollPanel();
+		UpdateVrStatusPanels();
 		ApplyVrShortcutInput();
 		ApplyDoorInteraction();
 	}
@@ -838,6 +848,7 @@ public static class VrController
 				}
 
 				EnsureMessageScrollPanel(underworld);
+				EnsureVrStatusPanels(underworld);
 			}
 		}
 		playerdat.RefreshLighting();
@@ -1159,7 +1170,7 @@ public static class VrController
 
 	static void EnsureMessageScrollPanel(Node3D underworld = null)
 	{
-		if (!uwsettings.instance.vr_message_scroll_panel || _xrCamera == null)
+		if (!uwsettings.instance.vr_status_panels || _xrCamera == null)
 		{
 			return;
 		}
@@ -1185,19 +1196,13 @@ public static class VrController
 			DisableReceiveShadows = true,
 		};
 
-		var width = uwsettings.instance.vr_message_scroll_width;
-		if (width <= 0.2f)
-		{
-			width = 1.05f;
-		}
-
-		var aspect = hudRect.Size.Y / hudRect.Size.X;
+		var quadSize = HudRectToQuadSize(hudRect);
 		_messageScrollPanel = new MeshInstance3D
 		{
 			Name = "VrMessageScrollPanel",
 			Mesh = new QuadMesh
 			{
-				Size = new Vector2(width, width * aspect),
+				Size = quadSize,
 				Material = _messageScrollMaterial,
 			},
 			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
@@ -1205,16 +1210,16 @@ public static class VrController
 			Visible = false,
 		};
 		_xrCamera.AddChild(_messageScrollPanel);
-		GD.Print($"[VR] Message scroll panel attached to headset ({width:F2}m wide).");
+		GD.Print($"[VR] Message scroll panel attached to headset ({quadSize.X:F2}m wide).");
 	}
+
+	static Vector2 GetMessageScrollOffsetMeters() => new(
+		uwsettings.instance.vr_message_scroll_offset_x,
+		uwsettings.instance.vr_message_scroll_offset_y);
 
 	static bool ShouldShowMessageScrollPanel()
 	{
-		return IsActive
-			&& uwsettings.instance.vr_message_scroll_panel
-			&& !uwsettings.instance.vr_mirror
-			&& uimanager.InGame
-			&& !IsHudOnMenuScreen()
+		return ShouldShowHeadOverlays()
 			&& _messageScrollViewport != null;
 	}
 
@@ -1222,6 +1227,100 @@ public static class VrController
 	{
 		var scroll = uimanager.MessageScroll;
 		return scroll != null && !string.IsNullOrWhiteSpace(scroll.Text);
+	}
+
+	static bool ShouldHoldMessageScrollOpen()
+	{
+		return MessageDisplay.WaitingForTypedInput
+			|| MessageDisplay.WaitingForYesOrNo
+			|| MessageDisplay.WaitingForMore
+			|| uimanager.MessageScrollIsTemporary
+			|| (uimanager.InConversation && ConversationVM.WaitingForInput);
+	}
+
+	static float MessageScrollNowSeconds() => HeadOverlayNowSeconds();
+
+	/// <summary>Call when bottom message scroll text changes (new line printed).</summary>
+	public static void NotifyMessageScrollUpdated()
+	{
+		if (!uwsettings.instance.vr_status_panels || !IsActive || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		if (!HasMessageScrollContent())
+		{
+			_messageScrollHideAfterTime = -1f;
+			_messageScrollAlpha = 0f;
+			return;
+		}
+
+		if (HeadOverlaysAlwaysVisible() || ShouldHoldMessageScrollOpen())
+		{
+			_messageScrollHideAfterTime = -1f;
+			_messageScrollAlpha = 1f;
+			return;
+		}
+
+		_messageScrollHideAfterTime = MessageScrollNowSeconds() + GetHeadOverlayDisplaySeconds();
+		_messageScrollAlpha = 1f;
+	}
+
+	static void UpdateMessageScrollFade()
+	{
+		if (HeadOverlaysAlwaysVisible())
+		{
+			_messageScrollHideAfterTime = -1f;
+			_messageScrollAlpha = HasMessageScrollContent() ? 1f : 0f;
+			return;
+		}
+
+		var holdOpen = ShouldHoldMessageScrollOpen();
+		if (holdOpen)
+		{
+			_messageScrollHideAfterTime = -1f;
+			_messageScrollAlpha = 1f;
+			_messageScrollHoldWasActive = true;
+			return;
+		}
+
+		if (_messageScrollHoldWasActive)
+		{
+			_messageScrollHoldWasActive = false;
+			_messageScrollHideAfterTime = MessageScrollNowSeconds() + GetHeadOverlayDisplaySeconds();
+			_messageScrollAlpha = 1f;
+			return;
+		}
+
+		if (_messageScrollHideAfterTime < 0f)
+		{
+			return;
+		}
+
+		var now = MessageScrollNowSeconds();
+		if (now < _messageScrollHideAfterTime)
+		{
+			_messageScrollAlpha = 1f;
+			return;
+		}
+
+		var fadeT = (now - _messageScrollHideAfterTime) / GetHeadOverlayFadeSeconds();
+		_messageScrollAlpha = Mathf.Clamp(1f - fadeT, 0f, 1f);
+		if (_messageScrollAlpha <= 0f)
+		{
+			_messageScrollHideAfterTime = -1f;
+		}
+	}
+
+	static void ApplyMessageScrollMaterialAlpha()
+	{
+		if (_messageScrollMaterial == null)
+		{
+			return;
+		}
+
+		_messageScrollMaterial.AlbedoColor = new Color(1f, 1f, 1f, _messageScrollAlpha);
+		_messageScrollMaterial.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 	}
 
 	static void UpdateMessageScrollPanel()
@@ -1237,21 +1336,29 @@ public static class VrController
 			return;
 		}
 
-		var hudRect = GetMessageScrollHudRectFixed();
-		var width = uwsettings.instance.vr_message_scroll_width;
-		if (width <= 0.2f)
+		if (HeadOverlaysAlwaysVisible())
 		{
-			width = 1.05f;
+			_messageScrollAlpha = 1f;
+		}
+		else
+		{
+			UpdateMessageScrollFade();
+			if (_messageScrollAlpha <= 0.001f)
+			{
+				_messageScrollPanel.Visible = false;
+				return;
+			}
 		}
 
-		var aspect = hudRect.Size.Y / hudRect.Size.X;
+		var hudRect = GetMessageScrollHudRectFixed();
 		if (_messageScrollPanel.Mesh is QuadMesh quad)
 		{
-			quad.Size = new Vector2(width, width * aspect);
+			quad.Size = HudRectToQuadSize(hudRect);
 		}
 
-		_messageScrollPanel.Position = new Vector3(0f, MessageScrollPanelOffsetY, -MessageScrollPanelDistance);
+		_messageScrollPanel.Position = HudRectCenterToCameraLocal(hudRect, GetMessageScrollOffsetMeters());
 		_messageScrollPanel.RotationDegrees = Vector3.Zero;
+		ApplyMessageScrollMaterialAlpha();
 		_messageScrollPanel.Visible = true;
 	}
 
@@ -1402,6 +1509,7 @@ public static class VrController
 		RefreshVrUiQuadMaterial();
 		SetHudPanelVisible(true);
 		EnsureMessageScrollPanel(_gameRoot?.GetParent<Node3D>());
+		EnsureVrStatusPanels(_gameRoot?.GetParent<Node3D>());
 		GD.Print($"[VR] Menu TV → hand HUD ({width:F2}m wide).");
 	}
 
@@ -1442,6 +1550,7 @@ public static class VrController
 		}
 
 		EnsureMessageScrollPanel(underworld);
+		EnsureVrStatusPanels(underworld);
 	}
 
 	static void RefreshVrWorldPresentation()
@@ -1650,6 +1759,11 @@ public static class VrController
 		UpdateXrViewportHdrForUiMode();
 	}
 
+	static void SetHeadOverlaysVisible(bool visible)
+	{
+		_headOverlaysVisible = visible;
+	}
+
 	static void RetryPendingVrHudSetup()
 	{
 		if (!IsActive || uwsettings.instance.vr_mirror || !uwsettings.instance.vr_hud_panel || _leftController == null)
@@ -1682,9 +1796,32 @@ public static class VrController
 
 	static void ApplyHudMenuToggleInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null || !uwsettings.instance.vr_hud_panel)
+		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null)
 		{
 			_hudMenuToggleWasPressed = false;
+			_hudPanelToggleWasPressed = false;
+			return;
+		}
+
+		if (IsHudOnMenuScreen())
+		{
+			_hudMenuToggleWasPressed = false;
+			_hudPanelToggleWasPressed = false;
+			return;
+		}
+
+		var overlayPressed = IsButtonPressed(_leftController, HeadOverlayToggleButtonActions);
+		if (overlayPressed && !_hudMenuToggleWasPressed)
+		{
+			SetHeadOverlaysVisible(!_headOverlaysVisible);
+			GD.Print($"[VR] Head overlays {(_headOverlaysVisible ? "shown" : "hidden")} (Y).");
+		}
+
+		_hudMenuToggleWasPressed = overlayPressed;
+
+		if (!uwsettings.instance.vr_hud_panel)
+		{
+			_hudPanelToggleWasPressed = false;
 			return;
 		}
 
@@ -1693,20 +1830,14 @@ public static class VrController
 			RetryPendingVrHudSetup();
 		}
 
-		if (IsHudOnMenuScreen())
-		{
-			_hudMenuToggleWasPressed = false;
-			return;
-		}
-
-		var pressed = IsButtonPressed(_leftController, HudMenuToggleButtonActions);
-		if (pressed && !_hudMenuToggleWasPressed)
+		var hudPressed = IsButtonPressed(_leftController, HudPanelToggleButtonActions);
+		if (hudPressed && !_hudPanelToggleWasPressed)
 		{
 			SetHudPanelVisible(!_hudPanelVisible);
-			GD.Print($"[VR] HUD panel {(_hudPanelVisible ? "shown" : "hidden")} (Y).");
+			GD.Print($"[VR] HUD panel {(_hudPanelVisible ? "shown" : "hidden")} (menu).");
 		}
 
-		_hudMenuToggleWasPressed = pressed;
+		_hudPanelToggleWasPressed = hudPressed;
 	}
 
 	static void EnsurePointerLaser(Node3D underworld)

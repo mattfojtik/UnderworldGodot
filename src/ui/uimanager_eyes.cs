@@ -52,6 +52,7 @@ namespace Underworld
             }
             EyeLevel = 3 - EyeLevel;
             EyeLevel = int.Min(grEyes.ImageCache.GetUpperBound(0), 4 + EyeLevel);
+            VrController.NotifyVrEyesUpdated();
         }
 
         private void _ProcessEyeAnims(double delta)
