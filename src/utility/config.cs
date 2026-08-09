@@ -146,27 +146,34 @@ public class uwsettings
     /// <summary>Head-locked message scroll offset in metres (X = right, Y = up).</summary>
     public float vr_message_scroll_offset_x { get; set; } = 0f;
     public float vr_message_scroll_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked health flask offset in metres (X = right, Y = up).</summary>
+    /// <summary>Head-locked health flask offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_health_flask_offset_x { get; set; } = 0f;
     public float vr_health_flask_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked mana flask offset in metres (X = right, Y = up).</summary>
+    public float vr_health_flask_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked mana flask offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_mana_flask_offset_x { get; set; } = 0f;
     public float vr_mana_flask_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked compass offset in metres (X = right, Y = up).</summary>
+    public float vr_mana_flask_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked compass offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_compass_offset_x { get; set; } = 0f;
     public float vr_compass_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked inventory/paperdoll offset in metres (X = right, Y = up).</summary>
+    public float vr_compass_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked inventory/paperdoll offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_inventory_offset_x { get; set; } = 0f;
     public float vr_inventory_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked weapon attack animation offset in metres (X = right, Y = up).</summary>
+    public float vr_inventory_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked weapon attack animation offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_weapon_anim_offset_x { get; set; } = 0f;
     public float vr_weapon_anim_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked attack power gem offset in metres (X = right, Y = up).</summary>
+    public float vr_weapon_anim_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked attack power gem offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_power_gem_offset_x { get; set; } = 0f;
     public float vr_power_gem_offset_y { get; set; } = 0f;
-    /// <summary>Head-locked enemy-health eyes/gargoyle offset in metres (X = right, Y = up).</summary>
+    public float vr_power_gem_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked enemy-health eyes/gargoyle offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_eyes_offset_x { get; set; } = 0f;
     public float vr_eyes_offset_y { get; set; } = 0f;
+    public float vr_eyes_offset_z { get; set; } = 0f;
     public float FOV { get; set; } = 75;
     public bool showcolliders { get; set; }
     public int shaderbandsize { get; set; } = 8;

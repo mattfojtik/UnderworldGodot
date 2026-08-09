@@ -249,23 +249,49 @@ public static partial class VrController
 
 	static bool ShouldShowVrStatusPanels() => ShouldShowHeadOverlays();
 
-	static Vector2 GetWidgetOffsetMeters(VrStatusWidgetKind kind)
+	static Vector3 GetWidgetOffsetMeters(VrStatusWidgetKind kind)
 	{
 		var settings = uwsettings.instance;
 		return kind switch
 		{
-			VrStatusWidgetKind.HealthFlask => new Vector2(settings.vr_health_flask_offset_x, settings.vr_health_flask_offset_y),
-			VrStatusWidgetKind.ManaFlask => new Vector2(settings.vr_mana_flask_offset_x, settings.vr_mana_flask_offset_y),
-			VrStatusWidgetKind.Compass => new Vector2(settings.vr_compass_offset_x, settings.vr_compass_offset_y),
-			VrStatusWidgetKind.Inventory => new Vector2(settings.vr_inventory_offset_x, settings.vr_inventory_offset_y),
-			VrStatusWidgetKind.WeaponAnim => new Vector2(settings.vr_weapon_anim_offset_x, settings.vr_weapon_anim_offset_y),
-			VrStatusWidgetKind.PowerGem => new Vector2(settings.vr_power_gem_offset_x, settings.vr_power_gem_offset_y),
-			VrStatusWidgetKind.Eyes => new Vector2(settings.vr_eyes_offset_x, settings.vr_eyes_offset_y),
-			_ => Vector2.Zero,
+			VrStatusWidgetKind.HealthFlask => new Vector3(
+				settings.vr_health_flask_offset_x,
+				settings.vr_health_flask_offset_y,
+				settings.vr_health_flask_offset_z),
+			VrStatusWidgetKind.ManaFlask => new Vector3(
+				settings.vr_mana_flask_offset_x,
+				settings.vr_mana_flask_offset_y,
+				settings.vr_mana_flask_offset_z),
+			VrStatusWidgetKind.Compass => new Vector3(
+				settings.vr_compass_offset_x,
+				settings.vr_compass_offset_y,
+				settings.vr_compass_offset_z),
+			VrStatusWidgetKind.Inventory => new Vector3(
+				settings.vr_inventory_offset_x,
+				settings.vr_inventory_offset_y,
+				settings.vr_inventory_offset_z),
+			VrStatusWidgetKind.WeaponAnim => new Vector3(
+				settings.vr_weapon_anim_offset_x,
+				settings.vr_weapon_anim_offset_y,
+				settings.vr_weapon_anim_offset_z),
+			VrStatusWidgetKind.PowerGem => new Vector3(
+				settings.vr_power_gem_offset_x,
+				settings.vr_power_gem_offset_y,
+				settings.vr_power_gem_offset_z),
+			VrStatusWidgetKind.Eyes => new Vector3(
+				settings.vr_eyes_offset_x,
+				settings.vr_eyes_offset_y,
+				settings.vr_eyes_offset_z),
+			_ => Vector3.Zero,
 		};
 	}
 
 	static Vector3 HudRectCenterToCameraLocal(Rect2 hudRect, Vector2 offsetMeters)
+	{
+		return HudRectCenterToCameraLocal(hudRect, new Vector3(offsetMeters.X, offsetMeters.Y, 0f));
+	}
+
+	static Vector3 HudRectCenterToCameraLocal(Rect2 hudRect, Vector3 offsetMeters)
 	{
 		var screenWidth = GetStatusScreenWidthMeters();
 		var screenHeight = screenWidth * ((float)HudPanelHeightPx / HudPanelWidthPx);
@@ -273,7 +299,8 @@ public static partial class VrController
 		var cy = (hudRect.Position.Y + hudRect.Size.Y * 0.5f) / HudPanelHeightPx;
 		var x = (cx - 0.5f) * screenWidth + offsetMeters.X;
 		var y = (0.5f - cy) * screenHeight + offsetMeters.Y + uwsettings.instance.vr_status_panels_offset_y;
-		return new Vector3(x, y, -GetStatusScreenDistanceMeters());
+		var z = -GetStatusScreenDistanceMeters() - offsetMeters.Z;
+		return new Vector3(x, y, z);
 	}
 
 	static Vector3 HudRectCenterToCameraLocal(Rect2 hudRect, VrStatusWidgetKind kind) =>
@@ -1011,11 +1038,11 @@ public static partial class VrController
 		UpdateXrViewportHdrForUiMode();
 	}
 
-	static VrStatusWidget GetInventoryStatusWidget()
+	static VrStatusWidget GetStatusWidget(VrStatusWidgetKind kind)
 	{
 		foreach (var widget in _statusWidgets)
 		{
-			if (widget.Kind == VrStatusWidgetKind.Inventory)
+			if (widget.Kind == kind)
 			{
 				return widget;
 			}
@@ -1024,29 +1051,42 @@ public static partial class VrController
 		return null;
 	}
 
-	static bool IsInventoryOverlayInteractive()
+	static bool IsStatusWidgetClickable(VrStatusWidgetKind kind)
 	{
-		if (!ShouldShowVrStatusPanels() || uimanager.blockinput)
-		{
-			return false;
-		}
-
-		var widget = GetInventoryStatusWidget();
-		return widget?.Panel != null && widget.Panel.Visible && widget.Alpha > 0.001f;
+		return kind is VrStatusWidgetKind.Inventory
+			or VrStatusWidgetKind.HealthFlask
+			or VrStatusWidgetKind.ManaFlask
+			or VrStatusWidgetKind.Compass;
 	}
 
-	static void ClearInventoryOverlayPointerState()
+	static bool IsStatusOverlayPointerActive()
 	{
-		_inventoryOverlayHovering = false;
-		_inventoryOverlayLeftWasPressed = false;
-		_inventoryOverlayRightWasPressed = false;
-		_lastInventoryOverlayHudPos = new Vector2(-1f, -1f);
+		return ShouldShowVrStatusPanels() && !uimanager.blockinput;
+	}
+
+	static bool IsStatusWidgetInteractive(VrStatusWidget widget)
+	{
+		return widget != null
+			&& IsStatusWidgetClickable(widget.Kind)
+			&& widget.Panel != null
+			&& widget.Panel.Visible
+			&& widget.Alpha > 0.001f;
+	}
+
+	static void ClearStatusOverlayPointerState()
+	{
+		_statusOverlayHovering = false;
+		_statusOverlayHoverKind = default;
+		_statusOverlayHitWorld = default;
+		_statusOverlayLeftWasPressed = false;
+		_statusOverlayRightWasPressed = false;
+		_lastStatusOverlayHudPos = new Vector2(-1f, -1f);
 		UpdateInventoryOverlayCursor(default, show: false);
 	}
 
 	static void UpdateInventoryOverlayCursor(Vector2 hudPos, bool show)
 	{
-		var widget = GetInventoryStatusWidget();
+		var widget = GetStatusWidget(VrStatusWidgetKind.Inventory);
 		if (widget?.OverlayCursor == null)
 		{
 			return;
@@ -1128,69 +1168,106 @@ public static partial class VrController
 		return true;
 	}
 
+	static bool TryGetClosestClickableStatusWidgetHit(
+		Vector3 rayOrigin,
+		Vector3 rayDir,
+		float maxDistance,
+		out VrStatusWidget widget,
+		out Vector2 hudViewportPos,
+		out Vector3 hitWorld)
+	{
+		widget = null;
+		hudViewportPos = default;
+		hitWorld = default;
+		var bestDistance = float.MaxValue;
+
+		foreach (var candidate in _statusWidgets)
+		{
+			if (!IsStatusWidgetInteractive(candidate))
+			{
+				continue;
+			}
+
+			if (!TryGetStatusWidgetHit(candidate, rayOrigin, rayDir, maxDistance, out var hudPos, out var candidateHit))
+			{
+				continue;
+			}
+
+			var distance = rayOrigin.DistanceTo(candidateHit);
+			if (distance >= bestDistance)
+			{
+				continue;
+			}
+
+			bestDistance = distance;
+			widget = candidate;
+			hudViewportPos = hudPos;
+			hitWorld = candidateHit;
+		}
+
+		return widget != null;
+	}
+
 	/// <summary>
-	/// Raycast the head-locked inventory overlay and forward hits to the real HUD paperdoll.
+	/// Raycast clickable head-locked status overlays and forward hits to the real HUD controls.
 	/// </summary>
 	static void ApplyStatusOverlayPointerInput()
 	{
 		if (!IsActive || uwsettings.instance.vr_mirror || _hudViewport == null || _rightController == null)
 		{
-			ClearInventoryOverlayPointerState();
+			ClearStatusOverlayPointerState();
 			return;
 		}
 
 		if (_hudPointerHovering)
 		{
-			_inventoryOverlayHovering = false;
-			_inventoryOverlayLeftWasPressed = false;
-			_inventoryOverlayRightWasPressed = false;
-			UpdateInventoryOverlayCursor(default, show: false);
+			ClearStatusOverlayPointerState();
 			return;
 		}
 
-		if (!IsInventoryOverlayInteractive())
+		if (!IsStatusOverlayPointerActive())
 		{
-			ClearInventoryOverlayPointerState();
+			ClearStatusOverlayPointerState();
 			return;
 		}
 
-		var widget = GetInventoryStatusWidget();
 		var rayOrigin = _rightController.GlobalPosition;
 		var rayDir = GetControllerRayDir();
-		var hovering = TryGetStatusWidgetHit(
-			widget,
+		var hovering = TryGetClosestClickableStatusWidgetHit(
 			rayOrigin,
 			rayDir,
 			StatusOverlayPointerMaxDistance,
+			out var widget,
 			out var hudPos,
 			out var hitWorld);
 
-		_inventoryOverlayHovering = hovering;
+		_statusOverlayHovering = hovering;
+		_statusOverlayHoverKind = hovering ? widget.Kind : default;
+		_statusOverlayHitWorld = hitWorld;
 		if (!hovering)
 		{
-			_inventoryOverlayLeftWasPressed = false;
-			_inventoryOverlayRightWasPressed = false;
-			_lastInventoryOverlayHudPos = new Vector2(-1f, -1f);
+			_statusOverlayLeftWasPressed = false;
+			_statusOverlayRightWasPressed = false;
+			_lastStatusOverlayHudPos = new Vector2(-1f, -1f);
 			UpdateInventoryOverlayCursor(default, show: false);
 			return;
 		}
 
-		UpdatePointerLaser(rayOrigin, hitWorld, visible: true);
 		if (_hudMouseLayer != null)
 		{
 			_hudMouseLayer.Visible = true;
 		}
 
-		if (hudPos != _lastInventoryOverlayHudPos)
+		if (hudPos != _lastStatusOverlayHudPos)
 		{
-			_lastInventoryOverlayHudPos = hudPos;
+			_lastStatusOverlayHudPos = hudPos;
 			PushHudMouseMotion(hudPos);
 		}
 
-		UpdateInventoryOverlayCursor(hudPos, show: true);
+		UpdateInventoryOverlayCursor(hudPos, show: widget.Kind == VrStatusWidgetKind.Inventory);
 
 		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
-		if (leftPressed && !_inventoryOverlayLeftWasPressed)
+		if (leftPressed && !_statusOverlayLeftWasPressed)
 		{
 			if (!TryDismissMessageMore()
 				&& !TryConfirmYesNoPrompt(hudPos, yes: true)
@@ -1199,10 +1276,10 @@ public static partial class VrController
 				PushHudMouseClick(hudPos, MouseButton.Left);
 			}
 		}
-		_inventoryOverlayLeftWasPressed = leftPressed;
+		_statusOverlayLeftWasPressed = leftPressed;
 
 		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
-		if (rightPressed && !_inventoryOverlayRightWasPressed)
+		if (rightPressed && !_statusOverlayRightWasPressed)
 		{
 			if (!TryDismissMessageMore()
 				&& !TryConfirmYesNoPrompt(hudPos, yes: false)
@@ -1211,6 +1288,6 @@ public static partial class VrController
 				PushHudMouseClick(hudPos, MouseButton.Right);
 			}
 		}
-		_inventoryOverlayRightWasPressed = rightPressed;
+		_statusOverlayRightWasPressed = rightPressed;
 	}
 }

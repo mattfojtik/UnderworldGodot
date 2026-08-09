@@ -165,6 +165,11 @@
             "type": "number",
             "default": 0
         },
+        "vr_health_flask_offset_z": {
+            "description": "Head-locked health flask depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
         "vr_mana_flask_offset_x": {
             "description": "Head-locked mana flask offset in metres (X right, Y up).",
             "type": "number",
@@ -172,6 +177,11 @@
         },
         "vr_mana_flask_offset_y": {
             "description": "Head-locked mana flask vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_mana_flask_offset_z": {
+            "description": "Head-locked mana flask depth offset in metres; positive pushes farther from headset.",
             "type": "number",
             "default": 0
         },
@@ -185,6 +195,11 @@
             "type": "number",
             "default": 0
         },
+        "vr_compass_offset_z": {
+            "description": "Head-locked compass depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
         "vr_inventory_offset_x": {
             "description": "Head-locked inventory/paperdoll offset in metres (X right, Y up).",
             "type": "number",
@@ -192,6 +207,11 @@
         },
         "vr_inventory_offset_y": {
             "description": "Head-locked inventory/paperdoll vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_inventory_offset_z": {
+            "description": "Head-locked inventory/paperdoll depth offset in metres; positive pushes farther from headset.",
             "type": "number",
             "default": 0
         },
@@ -205,6 +225,11 @@
             "type": "number",
             "default": 0
         },
+        "vr_weapon_anim_offset_z": {
+            "description": "Head-locked weapon attack animation depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
         "vr_power_gem_offset_x": {
             "description": "Head-locked attack power gem offset in metres (X right, Y up).",
             "type": "number",
@@ -215,6 +240,11 @@
             "type": "number",
             "default": 0
         },
+        "vr_power_gem_offset_z": {
+            "description": "Head-locked attack power gem depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
         "vr_eyes_offset_x": {
             "description": "Head-locked gargoyle/eyes offset in metres (X right, Y up).",
             "type": "number",
@@ -222,6 +252,11 @@
         },
         "vr_eyes_offset_y": {
             "description": "Head-locked gargoyle/eyes vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_eyes_offset_z": {
+            "description": "Head-locked gargoyle/eyes depth offset in metres; positive pushes farther from headset.",
             "type": "number",
             "default": 0
         },

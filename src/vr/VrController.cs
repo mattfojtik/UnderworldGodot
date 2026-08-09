@@ -65,10 +65,12 @@ public static partial class VrController
 	static bool _hudPointerHovering;
 	static bool _hudPointerLeftWasPressed;
 	static bool _hudPointerRightWasPressed;
-	static bool _inventoryOverlayHovering;
-	static Vector2 _lastInventoryOverlayHudPos = new(-1f, -1f);
-	static bool _inventoryOverlayLeftWasPressed;
-	static bool _inventoryOverlayRightWasPressed;
+	static bool _statusOverlayHovering;
+	static VrStatusWidgetKind _statusOverlayHoverKind;
+	static Vector3 _statusOverlayHitWorld;
+	static Vector2 _lastStatusOverlayHudPos = new(-1f, -1f);
+	static bool _statusOverlayLeftWasPressed;
+	static bool _statusOverlayRightWasPressed;
 	static bool _worldPointerLeftWasPressed;
 	static bool _worldPointerRightWasPressed;
 	static float _pendingPickupRayDistance;
@@ -695,6 +697,7 @@ public static partial class VrController
 		ApplyHudPointerInput();
 		ApplyStatusOverlayPointerInput();
 		ApplyWorldPointerInput();
+		UpdateVrGameplayPointerLaser();
 		UpdateHeldObjectVisual();
 		UpdateMessageScrollPanel();
 		UpdateVrStatusPanels();
@@ -2603,7 +2606,7 @@ public static partial class VrController
 			return;
 		}
 
-		if ((_hudPanelVisible && _hudPointerHovering) || _inventoryOverlayHovering)
+		if ((_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering)
 		{
 			_worldPointerLeftWasPressed = false;
 			_worldPointerRightWasPressed = false;
@@ -2612,14 +2615,6 @@ public static partial class VrController
 
 		var rayOrigin = _rightController.GlobalPosition;
 		var rayDir = GetControllerRayDir();
-		if (ShouldShowVrPointerLaser())
-		{
-			UpdateGameplayPointerLaser(rayOrigin, rayDir);
-		}
-		else
-		{
-			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
-		}
 
 		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
 		var inAttackMode = uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
@@ -2777,7 +2772,7 @@ public static partial class VrController
 		}
 
 		// HUD panel already shows the held sprite while the laser is over it.
-		if (_hudPointerHovering || _inventoryOverlayHovering)
+		if (_hudPointerHovering || _statusOverlayHovering)
 		{
 			SetHeldObjectNodeVisible(false);
 			return;
@@ -2859,10 +2854,9 @@ public static partial class VrController
 	}
 
 	/// <summary>How far the controller laser may extend along a ray before exceeding pick reach from the avatar.</summary>
-	static float GetMaxReachAlongRay(Vector3 rayOrigin, Vector3 rayDir)
+	static float GetMaxReachAlongRay(Vector3 rayOrigin, Vector3 rayDir, float maxReach)
 	{
 		rayDir = rayDir.Normalized();
-		var maxReach = GetInteractRayDistance();
 		var offset = rayOrigin - GetAvatarBodyCenter();
 		var alongDir = offset.Dot(rayDir);
 		var c = offset.LengthSquared() - maxReach * maxReach;
@@ -2882,12 +2876,60 @@ public static partial class VrController
 		return Mathf.Max(0.01f, t);
 	}
 
-	/// <summary>Gameplay laser: reach is anchored to the avatar; arm extension shortens the beam.</summary>
+	static float GetMaxReachAlongRay(Vector3 rayOrigin, Vector3 rayDir) =>
+		GetMaxReachAlongRay(rayOrigin, rayDir, GetInteractRayDistance());
+
+	static float GetPointerLaserVisualDistance()
+	{
+		// Attack reach is very short, but a longer beam helps aim; other modes match pick reach.
+		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
+		{
+			return GetLookVisionWorldDistance();
+		}
+
+		return GetInteractRayDistance();
+	}
+
+	/// <summary>Gameplay laser: stable visual length; picking still uses interaction reach.</summary>
 	static void UpdateGameplayPointerLaser(Vector3 rayOrigin, Vector3 rayDir)
 	{
 		rayDir = rayDir.Normalized();
-		var laserT = GetMaxReachAlongRay(rayOrigin, rayDir);
+		var laserT = GetMaxReachAlongRay(rayOrigin, rayDir, GetPointerLaserVisualDistance());
 		UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * laserT, visible: true);
+	}
+
+	static void UpdateVrGameplayPointerLaser()
+	{
+		if (_rightController == null)
+		{
+			return;
+		}
+
+		if (!ShouldShowVrPointerLaser())
+		{
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			return;
+		}
+
+		var rayOrigin = _rightController.GlobalPosition;
+		var rayDir = GetControllerRayDir();
+		if (ShouldUseHudMenuPointerOnly() || IsHudOnMenuScreen() || (_hudPanelVisible && _hudPointerHovering))
+		{
+			return;
+		}
+
+		if (_statusOverlayHovering)
+		{
+			UpdatePointerLaser(rayOrigin, _statusOverlayHitWorld, visible: true);
+			return;
+		}
+
+		if (!uimanager.InGame || uimanager.blockinput)
+		{
+			return;
+		}
+
+		UpdateGameplayPointerLaser(rayOrigin, rayDir);
 	}
 
 	static void TryInteractLaserPick(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
@@ -3596,10 +3638,6 @@ public static partial class VrController
 		{
 			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * pointerMaxDistance, visible: true);
 		}
-		else if (!ShouldShowVrPointerLaser())
-		{
-			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
-		}
 
 		if (hovering)
 		{
@@ -3929,7 +3967,7 @@ public static partial class VrController
 			if ((_hudPointerHovering && _hudPanelVisible &&
 				(IsButtonPressed(_rightController, HudLeftClickActions) ||
 				 IsButtonPressed(_rightController, HudRightClickActions)))
-				|| (_inventoryOverlayHovering &&
+				|| (_statusOverlayHovering &&
 					(IsButtonPressed(_rightController, HudLeftClickActions) ||
 					 IsButtonPressed(_rightController, HudRightClickActions)))
 				|| IsHud3DViewportRightHeld
