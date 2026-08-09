@@ -80,7 +80,7 @@
             "description": "VR boot path. explore = load straight into a level; full = intro cutscene, main menu, and character creation on a VR menu screen.",
             "type": "string",
             "enum": ["explore", "full"],
-            "default": "explore"
+            "default": "full"
         },
 
         "datafolder": {
@@ -116,7 +116,7 @@
         "vr_message_scroll_offset_y": {
             "description": "Head-locked message scroll vertical offset in metres; negative lowers.",
             "type": "number",
-            "default": -0.18
+            "default": 0
         },
 
         "vr_status_panels_always_visible": {
@@ -146,13 +146,13 @@
         "vr_status_screen_distance": {
             "description": "Distance in front of the headset for head-locked overlays.",
             "type": "number",
-            "default": 1.35
+            "default": 2
         },
 
         "vr_status_panels_offset_y": {
             "description": "Vertical offset applied to all head overlays in metres; negative lowers the whole group.",
             "type": "number",
-            "default": 0
+            "default": -0.4
         },
 
         "vr_health_flask_offset_x": {
@@ -163,7 +163,37 @@
         "vr_health_flask_offset_y": {
             "description": "Head-locked health flask vertical offset in metres; negative lowers.",
             "type": "number",
-            "default": -0.18
+            "default": 0
+        },
+        "vr_mana_flask_offset_x": {
+            "description": "Head-locked mana flask offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_mana_flask_offset_y": {
+            "description": "Head-locked mana flask vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_compass_offset_x": {
+            "description": "Head-locked compass offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_compass_offset_y": {
+            "description": "Head-locked compass vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_inventory_offset_x": {
+            "description": "Head-locked inventory/paperdoll offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_inventory_offset_y": {
+            "description": "Head-locked inventory/paperdoll vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
         },
         "vr_power_gem_offset_x": {
             "description": "Head-locked attack power gem offset in metres (X right, Y up).",
@@ -173,7 +203,7 @@
         "vr_power_gem_offset_y": {
             "description": "Head-locked attack power gem vertical offset in metres; negative lowers.",
             "type": "number",
-            "default": -0.18
+            "default": 0
         },
         "vr_eyes_offset_x": {
             "description": "Head-locked gargoyle/eyes offset in metres (X right, Y up).",
@@ -183,7 +213,7 @@
         "vr_eyes_offset_y": {
             "description": "Head-locked gargoyle/eyes vertical offset in metres; negative lowers.",
             "type": "number",
-            "default": -0.18
+            "default": 0
         },
 
         "synth": {

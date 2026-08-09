@@ -85,7 +85,7 @@ public class uwsettings
     /// VR boot path. "explore" loads straight into a level (default avatar when datafolder is DATA).
     /// "full" runs the flat intro, main menu, character creation, and save selection on a VR menu screen.
     /// </summary>
-    public string vr_boot_mode { get; set; } = "explore";
+    public string vr_boot_mode { get; set; } = "full";
     /// <summary>Width of the front-menu TV quad in metres (vr_boot_mode "full").</summary>
     public float vr_menu_screen_width { get; set; } = 2.2f;
     /// <summary>Distance from the headset to the menu TV quad in metres.</summary>
@@ -115,7 +115,7 @@ public class uwsettings
     /// Sprite/NPC scale factor (independent of vr_world_scale). Applied before level load.
     /// 0 = match vr_world_scale. At ~2.54, a 48px UW1 NPC is about 6 ft tall.
     /// </summary>
-    public float vr_sprite_scale { get; set; } = 0f;
+    public float vr_sprite_scale { get; set; } = 2.54f;
     /// <summary>
     /// When true, show the flat SubViewport render on a screen in the headset (legacy fallback).
     /// When false (default), render the dungeon world directly in stereoscopic VR.
@@ -129,7 +129,7 @@ public class uwsettings
     public bool vr_hud_panel { get; set; } = true;
     /// <summary>Width of the left-hand HUD quad in metres (height follows 1280×800 aspect).</summary>
     public float vr_hud_panel_width { get; set; } = 0.42f;
-    /// <summary>Native VR: head-locked overlays (message scroll, health flask, attack gem, eyes/gargoyle).</summary>
+    /// <summary>Native VR: head-locked overlays (message scroll, flasks, compass, inventory, attack gem, eyes/gargoyle).</summary>
     public bool vr_status_panels { get; set; } = true;
     /// <summary>When true, head overlays stay visible instead of appearing on events and fading out.</summary>
     public bool vr_status_panels_always_visible { get; set; } = false;
@@ -140,21 +140,30 @@ public class uwsettings
     /// <summary>Virtual HUD screen width in metres for head-locked overlays (scroll, flask, gem, eyes).</summary>
     public float vr_status_screen_width { get; set; } = 2.2f;
     /// <summary>Distance in front of the headset for head-locked overlays.</summary>
-    public float vr_status_screen_distance { get; set; } = 1.35f;
+    public float vr_status_screen_distance { get; set; } = 2f;
     /// <summary>Vertical offset applied to all head overlays in metres (negative lowers the whole group).</summary>
-    public float vr_status_panels_offset_y { get; set; } = 0f;
+    public float vr_status_panels_offset_y { get; set; } = -0.4f;
     /// <summary>Head-locked message scroll offset in metres (X = right, Y = up).</summary>
     public float vr_message_scroll_offset_x { get; set; } = 0f;
-    public float vr_message_scroll_offset_y { get; set; } = -0.18f;
+    public float vr_message_scroll_offset_y { get; set; } = 0f;
     /// <summary>Head-locked health flask offset in metres (X = right, Y = up).</summary>
     public float vr_health_flask_offset_x { get; set; } = 0f;
-    public float vr_health_flask_offset_y { get; set; } = -0.18f;
+    public float vr_health_flask_offset_y { get; set; } = 0f;
+    /// <summary>Head-locked mana flask offset in metres (X = right, Y = up).</summary>
+    public float vr_mana_flask_offset_x { get; set; } = 0f;
+    public float vr_mana_flask_offset_y { get; set; } = 0f;
+    /// <summary>Head-locked compass offset in metres (X = right, Y = up).</summary>
+    public float vr_compass_offset_x { get; set; } = 0f;
+    public float vr_compass_offset_y { get; set; } = 0f;
+    /// <summary>Head-locked inventory/paperdoll offset in metres (X = right, Y = up).</summary>
+    public float vr_inventory_offset_x { get; set; } = 0f;
+    public float vr_inventory_offset_y { get; set; } = 0f;
     /// <summary>Head-locked attack power gem offset in metres (X = right, Y = up).</summary>
     public float vr_power_gem_offset_x { get; set; } = 0f;
-    public float vr_power_gem_offset_y { get; set; } = -0.18f;
+    public float vr_power_gem_offset_y { get; set; } = 0f;
     /// <summary>Head-locked enemy-health eyes/gargoyle offset in metres (X = right, Y = up).</summary>
     public float vr_eyes_offset_x { get; set; } = 0f;
-    public float vr_eyes_offset_y { get; set; } = -0.18f;
+    public float vr_eyes_offset_y { get; set; } = 0f;
     public float FOV { get; set; } = 75;
     public bool showcolliders { get; set; }
     public int shaderbandsize { get; set; } = 8;

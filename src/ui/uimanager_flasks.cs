@@ -122,6 +122,7 @@ namespace Underworld
             {
                 CurrentManaFlaskLevel--;
                 RedrawManaFlask();
+                VrController.NotifyVrManaFlaskUsed();
             }
             else
             {

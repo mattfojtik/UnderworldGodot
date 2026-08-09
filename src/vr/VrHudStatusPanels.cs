@@ -9,6 +9,9 @@ public static partial class VrController
 	enum VrStatusWidgetKind
 	{
 		HealthFlask,
+		ManaFlask,
+		Compass,
+		Inventory,
 		PowerGem,
 		Eyes,
 	}
@@ -28,6 +31,7 @@ public static partial class VrController
 		public float HideAfterTime = -1f;
 		public bool HoldWasActive;
 		public bool FadeWhenInactive = true;
+		public bool ShowWhileInGame;
 	}
 
 	static readonly List<VrStatusWidget> _statusWidgets = new();
@@ -67,6 +71,74 @@ public static partial class VrController
 		}
 
 		return rect;
+	}
+
+	static Rect2 GetManaFlaskHudRectFixed()
+	{
+		var ui = uimanager.instance;
+		if (ui?.ManaFlaskPanel != null && ui.ManaFlaskBG != null)
+		{
+			return new Rect2(ui.ManaFlaskPanel.Position + ui.ManaFlaskBG.Position, ui.ManaFlaskBG.Size);
+		}
+
+		var rect = new Rect2(1136f, 500f, 96f, 132f);
+		if (UWClass._RES == UWClass.GAME_UW2)
+		{
+			rect.Position += new Vector2(16f, 24f);
+		}
+
+		return rect;
+	}
+
+	static Rect2 GetCompassHudRectFixed()
+	{
+		return UWClass._RES == UWClass.GAME_UW2
+			? new Rect2(376f, 592f, 208f, 64f)
+			: new Rect2(448f, 524f, 208f, 104f);
+	}
+
+	static Rect2 GetInventoryHudRectFixed()
+	{
+		var ui = uimanager.instance;
+		if (ui?.PanelInventory != null && ui.PanelInventoryArt != null)
+		{
+			return new Rect2(
+				ui.PanelInventory.Position + ui.PanelInventoryArt.Position,
+				ui.PanelInventoryArt.Size);
+		}
+
+		return UWClass._RES == UWClass.GAME_UW2
+			? new Rect2(944f, 28f, 332f, 448f)
+			: new Rect2(944f, 28f, 332f, 456f);
+	}
+
+	static Panel GetCompassPanel()
+	{
+		var ui = uimanager.instance;
+		if (ui == null)
+		{
+			return null;
+		}
+
+		if (UWClass._RES == UWClass.GAME_UW2)
+		{
+			return ui.CompassPanelUW2;
+		}
+
+		return ui.CompassBgUW1?[0]?.GetParent() as Panel;
+	}
+
+	static bool UsesPanelSubtreeLayout(VrStatusWidgetKind kind)
+	{
+		return kind is VrStatusWidgetKind.HealthFlask
+			or VrStatusWidgetKind.ManaFlask
+			or VrStatusWidgetKind.Compass
+			or VrStatusWidgetKind.Inventory;
+	}
+
+	static Vector2 GetPanelDuplicateOffset(Control source, Rect2 hudRect)
+	{
+		return source.Position - hudRect.Position;
 	}
 
 	static Rect2 GetPowerGemHudRectFixed()
@@ -122,7 +194,7 @@ public static partial class VrController
 	static float GetStatusScreenDistanceMeters()
 	{
 		var distance = uwsettings.instance.vr_status_screen_distance;
-		return distance <= 0.5f ? 1.35f : distance;
+		return distance <= 0.5f ? 2f : distance;
 	}
 
 	static bool StatusPanelsAlwaysVisible() => HeadOverlaysAlwaysVisible();
@@ -146,6 +218,9 @@ public static partial class VrController
 		return kind switch
 		{
 			VrStatusWidgetKind.HealthFlask => new Vector2(settings.vr_health_flask_offset_x, settings.vr_health_flask_offset_y),
+			VrStatusWidgetKind.ManaFlask => new Vector2(settings.vr_mana_flask_offset_x, settings.vr_mana_flask_offset_y),
+			VrStatusWidgetKind.Compass => new Vector2(settings.vr_compass_offset_x, settings.vr_compass_offset_y),
+			VrStatusWidgetKind.Inventory => new Vector2(settings.vr_inventory_offset_x, settings.vr_inventory_offset_y),
 			VrStatusWidgetKind.PowerGem => new Vector2(settings.vr_power_gem_offset_x, settings.vr_power_gem_offset_y),
 			VrStatusWidgetKind.Eyes => new Vector2(settings.vr_eyes_offset_x, settings.vr_eyes_offset_y),
 			_ => Vector2.Zero,
@@ -207,7 +282,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (widget.Kind == VrStatusWidgetKind.HealthFlask)
+		if (UsesPanelSubtreeLayout(widget.Kind))
 		{
 			SyncControlSubtree(widget.Source, widget.Duplicate);
 			return;
@@ -322,9 +397,9 @@ public static partial class VrController
 		}
 
 		widget.Viewport.AddChild(duplicate);
-		if (widget.Kind == VrStatusWidgetKind.HealthFlask)
+		if (UsesPanelSubtreeLayout(widget.Kind))
 		{
-			duplicate.Position = -widget.HudRect.Position;
+			duplicate.Position = GetPanelDuplicateOffset(widget.Source as Control, widget.HudRect);
 		}
 		else
 		{
@@ -401,6 +476,40 @@ public static partial class VrController
 			});
 		}
 
+		if (ui.ManaFlaskPanel != null)
+		{
+			TryAddStatusWidget(new VrStatusWidget
+			{
+				Kind = VrStatusWidgetKind.ManaFlask,
+				HudRect = GetManaFlaskHudRectFixed(),
+				Source = ui.ManaFlaskPanel,
+				FadeWhenInactive = true,
+			});
+		}
+
+		var compassPanel = GetCompassPanel();
+		if (compassPanel != null)
+		{
+			TryAddStatusWidget(new VrStatusWidget
+			{
+				Kind = VrStatusWidgetKind.Compass,
+				HudRect = GetCompassHudRectFixed(),
+				Source = compassPanel,
+				ShowWhileInGame = true,
+			});
+		}
+
+		if (ui.PanelInventory != null)
+		{
+			TryAddStatusWidget(new VrStatusWidget
+			{
+				Kind = VrStatusWidgetKind.Inventory,
+				HudRect = GetInventoryHudRectFixed(),
+				Source = ui.PanelInventory,
+				ShowWhileInGame = true,
+			});
+		}
+
 		var powerGem = uimanager.PowerGem;
 		if (powerGem != null)
 		{
@@ -456,6 +565,9 @@ public static partial class VrController
 		return widget.Kind switch
 		{
 			VrStatusWidgetKind.HealthFlask => true,
+			VrStatusWidgetKind.ManaFlask => true,
+			VrStatusWidgetKind.Compass => uimanager.InGame,
+			VrStatusWidgetKind.Inventory => uimanager.InGame,
 			VrStatusWidgetKind.PowerGem => IsPowerGemActive(),
 			VrStatusWidgetKind.Eyes => AreEyesActive(),
 			_ => false,
@@ -551,6 +663,16 @@ public static partial class VrController
 		{
 			widget.Alpha = 1f;
 		}
+		else if (widget.ShowWhileInGame)
+		{
+			if (!IsWidgetContentActive(widget))
+			{
+				widget.Panel.Visible = false;
+				return;
+			}
+
+			widget.Alpha = 1f;
+		}
 		else
 		{
 			if (widget.HideAfterTime < 0f && !ShouldHoldWidgetOpen(widget))
@@ -568,6 +690,15 @@ public static partial class VrController
 		}
 
 		SyncStatusWidgetVisuals(widget);
+
+		if (widget.Kind == VrStatusWidgetKind.ManaFlask)
+		{
+			widget.HudRect = GetManaFlaskHudRectFixed();
+		}
+		else if (widget.Kind == VrStatusWidgetKind.Inventory)
+		{
+			widget.HudRect = GetInventoryHudRectFixed();
+		}
 
 		var quadSize = HudRectToQuadSize(widget.HudRect);
 		if (widget.Panel.Mesh is QuadMesh quad)
@@ -647,6 +778,24 @@ public static partial class VrController
 		foreach (var widget in _statusWidgets)
 		{
 			if (widget.Kind == VrStatusWidgetKind.HealthFlask)
+			{
+				StartWidgetDisplayTimer(widget);
+			}
+		}
+	}
+
+	/// <summary>Call when the player spends mana and the mana flask animates down.</summary>
+	public static void NotifyVrManaFlaskUsed()
+	{
+		if (!uwsettings.instance.vr_status_panels || !IsActive || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		InitStatusWidgetsIfNeeded();
+		foreach (var widget in _statusWidgets)
+		{
+			if (widget.Kind == VrStatusWidgetKind.ManaFlask)
 			{
 				StartWidgetDisplayTimer(widget);
 			}
