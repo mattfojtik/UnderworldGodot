@@ -195,6 +195,16 @@
             "type": "number",
             "default": 0
         },
+        "vr_weapon_anim_offset_x": {
+            "description": "Head-locked weapon attack animation offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_weapon_anim_offset_y": {
+            "description": "Head-locked weapon attack animation vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
         "vr_power_gem_offset_x": {
             "description": "Head-locked attack power gem offset in metres (X right, Y up).",
             "type": "number",

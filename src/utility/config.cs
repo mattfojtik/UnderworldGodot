@@ -158,6 +158,9 @@ public class uwsettings
     /// <summary>Head-locked inventory/paperdoll offset in metres (X = right, Y = up).</summary>
     public float vr_inventory_offset_x { get; set; } = 0f;
     public float vr_inventory_offset_y { get; set; } = 0f;
+    /// <summary>Head-locked weapon attack animation offset in metres (X = right, Y = up).</summary>
+    public float vr_weapon_anim_offset_x { get; set; } = 0f;
+    public float vr_weapon_anim_offset_y { get; set; } = 0f;
     /// <summary>Head-locked attack power gem offset in metres (X = right, Y = up).</summary>
     public float vr_power_gem_offset_x { get; set; } = 0f;
     public float vr_power_gem_offset_y { get; set; } = 0f;

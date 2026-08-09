@@ -12,6 +12,7 @@ public static partial class VrController
 		ManaFlask,
 		Compass,
 		Inventory,
+		WeaponAnim,
 		PowerGem,
 		Eyes,
 	}
@@ -110,6 +111,41 @@ public static partial class VrController
 		return UWClass._RES == UWClass.GAME_UW2
 			? new Rect2(944f, 28f, 332f, 448f)
 			: new Rect2(944f, 28f, 332f, 456f);
+	}
+
+	static TextureRect GetWeaponAnimRect()
+	{
+		var ui = uimanager.instance;
+		if (ui == null)
+		{
+			return null;
+		}
+
+		return UWClass._RES == UWClass.GAME_UW2 ? ui.weaponanimuw2 : ui.weaponanimuw1;
+	}
+
+	static Rect2 GetWeaponAnimHudRectFixed()
+	{
+		var anim = GetWeaponAnimRect();
+		if (anim != null)
+		{
+			return new Rect2(anim.Position, anim.Size);
+		}
+
+		return UWClass._RES == UWClass.GAME_UW2
+			? new Rect2(60f, 64f, 840f, 510f)
+			: new Rect2(204f, 72f, 661.6f, 390.4f);
+	}
+
+	static bool IsWeaponAnimActive()
+	{
+		var anim = GetWeaponAnimRect();
+		return anim != null && anim.Texture != null;
+	}
+
+	static bool IsWeaponAnimStageActive()
+	{
+		return uimanager.CombatAnimationStage != uimanager.CombatAnimationStages.PutAway;
 	}
 
 	static Panel GetCompassPanel()
@@ -221,6 +257,7 @@ public static partial class VrController
 			VrStatusWidgetKind.ManaFlask => new Vector2(settings.vr_mana_flask_offset_x, settings.vr_mana_flask_offset_y),
 			VrStatusWidgetKind.Compass => new Vector2(settings.vr_compass_offset_x, settings.vr_compass_offset_y),
 			VrStatusWidgetKind.Inventory => new Vector2(settings.vr_inventory_offset_x, settings.vr_inventory_offset_y),
+			VrStatusWidgetKind.WeaponAnim => new Vector2(settings.vr_weapon_anim_offset_x, settings.vr_weapon_anim_offset_y),
 			VrStatusWidgetKind.PowerGem => new Vector2(settings.vr_power_gem_offset_x, settings.vr_power_gem_offset_y),
 			VrStatusWidgetKind.Eyes => new Vector2(settings.vr_eyes_offset_x, settings.vr_eyes_offset_y),
 			_ => Vector2.Zero,
@@ -254,10 +291,20 @@ public static partial class VrController
 		if (source is TextureRect srcTr && duplicate is TextureRect dupTr)
 		{
 			dupTr.Texture = srcTr.Texture;
+			dupTr.Material = srcTr.Material;
 			dupTr.Visible = srcTr.Visible;
 			dupTr.Modulate = srcTr.Modulate;
 			dupTr.Position = srcTr.Position;
 			dupTr.Size = srcTr.Size;
+			dupTr.TextureFilter = srcTr.TextureFilter;
+		}
+		else if (source is Label srcLbl && duplicate is Label dupLbl)
+		{
+			dupLbl.Text = srcLbl.Text;
+			dupLbl.Visible = srcLbl.Visible;
+			dupLbl.Modulate = srcLbl.Modulate;
+			dupLbl.Position = srcLbl.Position;
+			dupLbl.Size = srcLbl.Size;
 		}
 		else if (source is CanvasItem srcCi && duplicate is CanvasItem dupCi)
 		{
@@ -310,10 +357,12 @@ public static partial class VrController
 		if (widget.Source is TextureRect srcTr && widget.Duplicate is TextureRect dupTr)
 		{
 			dupTr.Texture = srcTr.Texture;
+			dupTr.Material = srcTr.Material;
 			dupTr.Visible = srcTr.Visible;
 			dupTr.Modulate = srcTr.Modulate;
 			dupTr.Position = Vector2.Zero;
 			dupTr.Size = widget.HudRect.Size;
+			dupTr.TextureFilter = srcTr.TextureFilter;
 			return;
 		}
 
@@ -510,6 +559,18 @@ public static partial class VrController
 			});
 		}
 
+		var weaponAnim = GetWeaponAnimRect();
+		if (weaponAnim != null)
+		{
+			TryAddStatusWidget(new VrStatusWidget
+			{
+				Kind = VrStatusWidgetKind.WeaponAnim,
+				HudRect = GetWeaponAnimHudRectFixed(),
+				Source = weaponAnim,
+				FadeWhenInactive = true,
+			});
+		}
+
 		var powerGem = uimanager.PowerGem;
 		if (powerGem != null)
 		{
@@ -568,6 +629,7 @@ public static partial class VrController
 			VrStatusWidgetKind.ManaFlask => true,
 			VrStatusWidgetKind.Compass => uimanager.InGame,
 			VrStatusWidgetKind.Inventory => uimanager.InGame,
+			VrStatusWidgetKind.WeaponAnim => IsWeaponAnimActive(),
 			VrStatusWidgetKind.PowerGem => IsPowerGemActive(),
 			VrStatusWidgetKind.Eyes => AreEyesActive(),
 			_ => false,
@@ -579,6 +641,7 @@ public static partial class VrController
 		return widget.Kind switch
 		{
 			VrStatusWidgetKind.PowerGem => IsPowerGemActive(),
+			VrStatusWidgetKind.WeaponAnim => IsWeaponAnimActive() || IsWeaponAnimStageActive(),
 			VrStatusWidgetKind.Eyes => AreEyesActive(),
 			_ => false,
 		};
@@ -699,6 +762,10 @@ public static partial class VrController
 		{
 			widget.HudRect = GetInventoryHudRectFixed();
 		}
+		else if (widget.Kind == VrStatusWidgetKind.WeaponAnim)
+		{
+			widget.HudRect = GetWeaponAnimHudRectFixed();
+		}
 
 		var quadSize = HudRectToQuadSize(widget.HudRect);
 		if (widget.Panel.Mesh is QuadMesh quad)
@@ -762,6 +829,37 @@ public static partial class VrController
 				widget.HideAfterTime = -1f;
 				widget.Alpha = 1f;
 				widget.HoldWasActive = true;
+			}
+		}
+	}
+
+	/// <summary>Call when a weapon attack/draw animation frame changes.</summary>
+	public static void NotifyVrWeaponAnimUpdated()
+	{
+		if (!uwsettings.instance.vr_status_panels || !IsActive || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		InitStatusWidgetsIfNeeded();
+		foreach (var widget in _statusWidgets)
+		{
+			if (widget.Kind != VrStatusWidgetKind.WeaponAnim)
+			{
+				continue;
+			}
+
+			if (IsWeaponAnimActive() || IsWeaponAnimStageActive())
+			{
+				widget.HideAfterTime = -1f;
+				widget.Alpha = 1f;
+				widget.HoldWasActive = true;
+			}
+			else
+			{
+				widget.HoldWasActive = false;
+				widget.HideAfterTime = -1f;
+				widget.Alpha = 0f;
 			}
 		}
 	}

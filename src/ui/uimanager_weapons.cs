@@ -122,6 +122,7 @@ namespace Underworld
         public static void ClearWeaponAnimation()
         {
             WeaponAnim.Texture = null;
+            VrController.NotifyVrWeaponAnimUpdated();
         }
 
         public static void DrawWeaponAnimation(int animation, int frame)
@@ -140,6 +141,8 @@ namespace Underworld
                     //weapon anims are currently not loaded in uwdemo
                 }                
             }
+
+            VrController.NotifyVrWeaponAnimUpdated();
         }
 
         // private void _ProcessWeaponAnims(double delta)
