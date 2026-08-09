@@ -135,7 +135,7 @@ namespace Underworld
                 return;
             }
             bool MouseHeldDown = (Input.IsMouseButtonPressed(MouseButton.Right) && uimanager.IsMouseInViewPort())
-                || (VrController.IsActive && (VrController.IsHud3DViewportRightHeld || VrController.IsVrWorldRightHeld));
+                || VrCombatMotion.IsAttackHeldDown;
             //check bash, slash and stab inputs.
             bool KeyboardAttackHeldDown =  Input.IsKeyPressed(Key.P) || Input.IsKeyPressed(Key.Semicolon) || Input.IsKeyPressed(Key.Period);
             switch (stage)
@@ -193,14 +193,16 @@ namespace Underworld
                         }
                         else
                         {
-                            if (MouseHeldDown)
+                            if (MouseHeldDown && !VrCombatMotion.UseVrCombatInput())
                             {
-                                GetSwingTypeFromMousePos();    
+                                GetSwingTypeFromMousePos();
                             }
-                            else
+                            else if (VrCombatMotion.UseVrCombatInput())
                             {
-                                if(KeyboardAttackHeldDown)
-                                {
+                                WeaponSwingTypePlayer = 0;
+                            }
+                            else if (KeyboardAttackHeldDown)
+                            {
                                    //  (Input.IsKeyPressed(Key.P)) || (Input.IsKeyPressed(Key.Semicolon) || (Input.IsKeyPressed(Key.Period)
                                     if (Input.IsKeyPressed(Key.P))
                                     {
@@ -224,8 +226,7 @@ namespace Underworld
                                             }
                                         }
                                     }
-                                }
-                            }                            
+                            }
                         }
 
                         //Debug.Print($"Swing type {WeaponSwingTypePlayer}");

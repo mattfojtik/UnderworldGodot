@@ -309,6 +309,37 @@ namespace Underworld
         }
 
 
+        /// <summary>Native VR: right grip toggles weapon drawn / combat mode vs explore.</summary>
+        public static void ToggleVrCombatMode()
+        {
+            if (playerdat.play_hp == 0 || blockinput || playerdat.ObjectInHand != -1 || UsageMode != 0)
+            {
+                return;
+            }
+
+            var inCombat = InteractionMode == InteractionModes.ModeAttack && playerdat.play_drawn == 1;
+            if (inCombat)
+            {
+                VrCombatMotion.Reset();
+                if (combat.stage != combat.CombatStages.Ready && combat.stage != combat.CombatStages.OutOfCombat)
+                {
+                    combat.EndCombatLoop();
+                }
+
+                InteractionModeToggle(InteractionModes.ModeLook);
+                return;
+            }
+
+            if (InteractionMode != InteractionModes.ModeAttack)
+            {
+                InteractionModeToggle(InteractionModes.ModeAttack);
+            }
+            else if (playerdat.play_drawn != 1)
+            {
+                ToggleWeaponAnimationState(true);
+            }
+        }
+
         public static void ToggleWeaponAnimationState(bool drawWeapon, bool updateThemes = true)
         {
             //PreviousWeaponAnimation = -1; //force redraw.

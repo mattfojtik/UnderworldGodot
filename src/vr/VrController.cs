@@ -21,13 +21,13 @@ public static partial class VrController
 	/// <summary>Right-hand laser is over the 3D viewport hole in the HUD (not chrome/buttons).</summary>
 	public static bool IsHud3DViewportHovering { get; private set; }
 
-	/// <summary>Right grip held while pointing at the 3D viewport (attack charge/release).</summary>
+	/// <summary>Legacy HUD viewport right-click; no longer used for VR attack charging.</summary>
 	public static bool IsHud3DViewportRightHeld { get; private set; }
 
 	/// <summary>Controller laser is aimed into the live VR world (not the HUD panel).</summary>
 	public static bool IsVrWorldPointerActive { get; private set; }
 
-	/// <summary>Right grip held while aiming into the live VR world.</summary>
+	/// <summary>Legacy world right-click; no longer used for VR attack charging.</summary>
 	public static bool IsVrWorldRightHeld { get; private set; }
 
 	static Vector3 _baseGodotScale;
@@ -73,6 +73,7 @@ public static partial class VrController
 	static bool _statusOverlayRightWasPressed;
 	static bool _worldPointerLeftWasPressed;
 	static bool _worldPointerRightWasPressed;
+	static bool _combatGripWasPressed;
 	static float _pendingPickupRayDistance;
 	static int _vrHeldObjectIndex = -1;
 	static float _vrHeldRayDistance = 1f;
@@ -698,6 +699,8 @@ public static partial class VrController
 
 		ApplyHudPointerInput();
 		ApplyStatusOverlayPointerInput();
+		ApplyCombatModeToggleInput();
+		VrCombatMotion.Tick();
 		ApplyWorldPointerInput();
 		UpdateVrGameplayPointerLaser();
 		UpdateHeldObjectVisual();
@@ -1783,6 +1786,16 @@ public static partial class VrController
 	}
 
 	/// <summary>Laser is shown while either the hand HUD or head status overlays are open.</summary>
+	static bool ShouldShowVrGameplayPointerLaser()
+	{
+		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
+		{
+			return false;
+		}
+
+		return ShouldShowVrPointerLaser();
+	}
+
 	static bool ShouldShowVrPointerLaser() => _hudPanelVisible || _headOverlaysVisible;
 
 	static void RetryPendingVrHudSetup()
@@ -2263,7 +2276,78 @@ public static partial class VrController
 		}
 
 		SyncPlayerYawFromHead();
+		playerdat.PlayerCameraPitch_dseg_67d6_33D6 = GetHeadPitchUw();
 		motion.SyncPlayerObjectHeadingFromCameraYaw(playerdat.playerObject);
+	}
+
+	public static XRController3D GetWeaponHandController()
+	{
+		if (!IsActive)
+		{
+			return null;
+		}
+
+		return playerdat.isLefty ? _leftController : _rightController;
+	}
+
+	public static Vector3 WorldToTorsoLocal(Vector3 worldPos)
+	{
+		var frame = GetTorsoFrame();
+		var rel = worldPos - frame.Origin;
+		return new Vector3(
+			rel.Dot(frame.Basis.X),
+			rel.Dot(frame.Basis.Y),
+			rel.Dot(frame.Basis.Z));
+	}
+
+	static Transform3D GetTorsoFrame()
+	{
+		var origin = GetAvatarBodyCenter();
+		if (_xrCamera != null)
+		{
+			origin = _xrCamera.GlobalPosition + Vector3.Down * 0.35f;
+		}
+
+		var forward = -(_xrCamera?.GlobalTransform.Basis.Z ?? Vector3.Forward);
+		forward.Y = 0f;
+		if (forward.LengthSquared() < 1e-5f)
+		{
+			forward = Vector3.Forward;
+		}
+		else
+		{
+			forward = forward.Normalized();
+		}
+
+		var right = forward.Cross(Vector3.Up).Normalized();
+		var basis = new Basis(right, Vector3.Up, forward);
+		return new Transform3D(basis, origin);
+	}
+
+	static short GetHeadPitchUw()
+	{
+		if (_xrCamera == null)
+		{
+			return playerdat.PlayerCameraPitch_dseg_67d6_33D6;
+		}
+
+		var headEuler = _xrCamera.Transform.Basis.GetEuler(EulerOrder.Yxz);
+		var elevDeg = Mathf.RadToDeg(-headEuler.X);
+		var pitchIndex = Mathf.Clamp(elevDeg / 6f, -4f, 16f);
+		return (short)(pitchIndex * 0x300);
+	}
+
+	/// <summary>Map head look to viewport coords for ranged combat and legacy combat helpers.</summary>
+	public static void UpdateViewPortMouseFromHeadAim()
+	{
+		if (_xrCamera == null)
+		{
+			return;
+		}
+
+		var rayOrigin = _xrCamera.GlobalPosition;
+		var rayDir = -_xrCamera.GlobalTransform.Basis.Z;
+		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
 	}
 
 	static void RotatePlaySpaceYaw(float radians)
@@ -2581,6 +2665,30 @@ public static partial class VrController
 		SetHudPanelVisible(true);
 	}
 
+	static void ApplyCombatModeToggleInput()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null
+			|| !uimanager.InGame || uimanager.blockinput || IsHudOnMenuScreen())
+		{
+			_combatGripWasPressed = false;
+			return;
+		}
+
+		if ((_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering)
+		{
+			_combatGripWasPressed = IsButtonPressed(_rightController, HudRightClickActions);
+			return;
+		}
+
+		var pressed = IsButtonPressed(_rightController, HudRightClickActions);
+		if (pressed && !_combatGripWasPressed)
+		{
+			uimanager.ToggleVrCombatMode();
+		}
+
+		_combatGripWasPressed = pressed;
+	}
+
 	static void ApplyWorldPointerInput()
 	{
 		IsVrWorldPointerActive = false;
@@ -2615,29 +2723,17 @@ public static partial class VrController
 			return;
 		}
 
+		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
+		{
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+			return;
+		}
+
 		var rayOrigin = _rightController.GlobalPosition;
 		var rayDir = GetControllerRayDir();
 
 		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
-		var inAttackMode = uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
-
-		// Attack charge needs a steady grip hold; controller aim diverges from head look
-		// when pointing at world targets, so skip the head-alignment gate in attack mode.
-		if (inAttackMode)
-		{
-			IsVrWorldPointerActive = true;
-			UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
-			IsVrWorldRightHeld = rightPressed;
-			_worldPointerRightWasPressed = rightPressed;
-
-			var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
-			if (leftPressed && !_worldPointerLeftWasPressed)
-			{
-				TryInteractLaserPick(rayOrigin, rayDir, leftClick: true);
-			}
-			_worldPointerLeftWasPressed = leftPressed;
-			return;
-		}
 
 		IsVrWorldPointerActive = true;
 		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
@@ -2907,7 +3003,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (!ShouldShowVrPointerLaser())
+		if (!ShouldShowVrGameplayPointerLaser())
 		{
 			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
 			return;
@@ -3694,11 +3790,8 @@ public static partial class VrController
 			_hudPointerLeftWasPressed = leftPressed;
 
 			var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
-			if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
-			{
-				IsHud3DViewportRightHeld = rightPressed;
-			}
-			else if (rightPressed && !_hudPointerRightWasPressed)
+			if (rightPressed && !_hudPointerRightWasPressed
+				&& uimanager.InteractionMode != uimanager.InteractionModes.ModeAttack)
 			{
 				SyncVrObjectInfoCamera();
 				uimanager.TriggerViewPortClick(uwLocal, leftClick: false);
