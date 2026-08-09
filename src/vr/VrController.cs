@@ -90,7 +90,6 @@ public static partial class VrController
 	static Vector3 _motionStepPrevFloor;
 	static Vector3 _motionStepCurrFloor;
 	static bool _motionStepInitialized;
-	static short _lastSyncedBodyYaw;
 	static float _xrPlaySpaceYawRadians;
 	static int _debugFrameCounter;
 	static int _setupWaitFrames;
@@ -106,8 +105,6 @@ public static partial class VrController
 	const float StickDeadzone = 0.35f;
 	const float SnapTurnDegrees = 45f;
 	const float SnapTurnCooldownSeconds = 0.35f;
-	// Only compensate headset XZ when yaw jumps by snap-turn amount (~45°), not gradual body alignment.
-	const short SnapTurnYawCompensationThreshold = 6000;
 	const int DebugLogIntervalFrames = 180;
 	const float MirrorScreenWidthMeters = 1.5f;
 	const float MirrorScreenDistanceMeters = 0.85f;
@@ -654,6 +651,11 @@ public static partial class VrController
 			ApplyHudMenuToggleInput();
 			ApplyRecenterInput();
 			RetryPendingVrHudSetup();
+			if (uimanager.InGame && !uimanager.blockinput)
+			{
+				ApplySnapTurn();
+			}
+			ApplyBodyFacingFromHead();
 			SyncXrOriginFromGimbal();
 			ApplyNativeXrTrackingPassthrough();
 			UpdateHeadRelativeMotionYaw();
@@ -1947,21 +1949,6 @@ public static partial class VrController
 		return new Vector3(feet.X, GetGameFloorY(), feet.Z);
 	}
 
-	static short GetWrappedYawDelta(short current, short previous)
-	{
-		var delta = (int)current - previous;
-		if (delta > 16384)
-		{
-			delta -= 32768;
-		}
-		else if (delta < -16384)
-		{
-			delta += 32768;
-		}
-
-		return (short)delta;
-	}
-
 	static float GetBodyYawRadians()
 	{
 		return (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
@@ -1989,9 +1976,7 @@ public static partial class VrController
 			_xrOrigin.GlobalPosition = floorPos;
 			_lastSyncedDisplayFloorPos = floorPos;
 			_xrOriginFloorInitialized = true;
-			_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
 			_xrPlaySpaceYawRadians = GetBodyYawRadians();
-			ApplyXrPlaySpaceRotation();
 		}
 		else
 		{
@@ -1999,23 +1984,8 @@ public static partial class VrController
 			_lastSyncedDisplayFloorPos = floorPos;
 		}
 
-		// Only rotate the play space on snap-turns. Gradual body-yaw alignment during
-		// locomotion must not spin the XROrigin under the headset (causes backward jitter).
-		var yawDelta = GetWrappedYawDelta(playerdat.PlayerCameraYaw_dseg_8294, _lastSyncedBodyYaw);
-		var isSnapTurn = Math.Abs(yawDelta) >= SnapTurnYawCompensationThreshold;
-		if (isSnapTurn && _xrCamera != null)
-		{
-			var headBefore = _xrCamera.GlobalPosition;
-			_xrPlaySpaceYawRadians = GetBodyYawRadians();
-			ApplyXrPlaySpaceRotation();
-			var headAfter = _xrCamera.GlobalPosition;
-			_xrOrigin.GlobalPosition += new Vector3(headBefore.X - headAfter.X, 0f, headBefore.Z - headAfter.Z);
-			_lastSyncedBodyYaw = playerdat.PlayerCameraYaw_dseg_8294;
-		}
-		else
-		{
-			ApplyXrPlaySpaceRotation();
-		}
+		// Play-space yaw changes only via comfort snap-turn (RotatePlaySpaceYaw), not body-facing sync.
+		ApplyXrPlaySpaceRotation();
 	}
 
 	/// <summary>Mirror mode: XR origin carries body position/yaw; OpenXR rotates the XRCamera for head look.</summary>
@@ -2282,8 +2252,40 @@ public static partial class VrController
 			motion.MotionInputPressed = 0xA;
 		}
 
-		ApplySnapTurn();
 		ApplyJumpInput();
+	}
+
+	static void ApplyBodyFacingFromHead()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || !uimanager.InGame)
+		{
+			return;
+		}
+
+		SyncPlayerYawFromHead();
+		motion.SyncPlayerObjectHeadingFromCameraYaw(playerdat.playerObject);
+	}
+
+	static void RotatePlaySpaceYaw(float radians)
+	{
+		if (_xrOrigin == null)
+		{
+			return;
+		}
+
+		if (_xrCamera != null)
+		{
+			var headBefore = _xrCamera.GlobalPosition;
+			_xrPlaySpaceYawRadians -= radians;
+			ApplyXrPlaySpaceRotation();
+			var headAfter = _xrCamera.GlobalPosition;
+			_xrOrigin.GlobalPosition += new Vector3(headBefore.X - headAfter.X, 0f, headBefore.Z - headAfter.Z);
+		}
+		else
+		{
+			_xrPlaySpaceYawRadians -= radians;
+			ApplyXrPlaySpaceRotation();
+		}
 	}
 
 	static void ApplyJumpInput()
@@ -2366,17 +2368,17 @@ public static partial class VrController
 
 	static void SnapTurn(float degrees)
 	{
-		playerdat.PlayerCameraYaw_dseg_8294 = (short)(playerdat.PlayerCameraYaw_dseg_8294 + (degrees / 180f * 32767f));
 		_snapTurnCooldown = SnapTurnCooldownSeconds;
 
 		if (uwsettings.instance.vr_mirror)
 		{
+			playerdat.PlayerCameraYaw_dseg_8294 = (short)(playerdat.PlayerCameraYaw_dseg_8294 + (degrees / 180f * 32767f));
 			SyncXrOriginBodyFromGame();
+			return;
 		}
-		else
-		{
-			SyncXrOriginFromGimbal();
-		}
+
+		// Comfort turn: rotate play space only; body facing follows global head direction.
+		RotatePlaySpaceYaw(Mathf.DegToRad(degrees));
 	}
 
 	public static void SyncPlayerYawFromHead()

@@ -440,6 +440,13 @@ namespace Underworld
 
         }
 
+        /// <summary>Mirror <see cref="playerdat.PlayerCameraYaw_dseg_8294"/> into the player object heading fields (compass, NPCs).</summary>
+        public static void SyncPlayerObjectHeadingFromCameraYaw(uwObject playerObj)
+        {
+            playerObj.heading = (short)((playerdat.PlayerCameraYaw_dseg_8294 >> 0xD) & 0x7);
+            playerObj.npc_heading = (short)((playerdat.PlayerCameraYaw_dseg_8294 >> 8) & 0x1F);
+        }
+
         static void ApplyPlayerMotion(uwObject playerObj)
         {
             var di_zpos = playerObj.zpos;
@@ -561,8 +568,7 @@ namespace Underworld
 
             }
             //seg008_1B09_EDF:  (SEG_008_AAD in UW1 version)
-            playerObj.heading = (short)((playerdat.PlayerCameraYaw_dseg_8294 >> 0xD) & 0x7);
-            playerObj.npc_heading = (short)((playerdat.PlayerCameraYaw_dseg_8294 >> 8) & 0x1F);
+            SyncPlayerObjectHeadingFromCameraYaw(playerObj);
 
             if (playerMotionParams.unk_26_falldamage != 0)
             {
