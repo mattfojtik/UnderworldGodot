@@ -28,6 +28,7 @@ public static partial class VrController
 		public TextureRect GargoyleBackground;
 		public MeshInstance3D Panel;
 		public StandardMaterial3D Material;
+		public TextureRect OverlayCursor;
 		public float Alpha;
 		public float HideAfterTime = -1f;
 		public bool HoldWasActive;
@@ -457,6 +458,20 @@ public static partial class VrController
 		}
 
 		widget.Duplicate = duplicate;
+
+		if (widget.Kind == VrStatusWidgetKind.Inventory)
+		{
+			widget.OverlayCursor = new TextureRect
+			{
+				Name = "VrInventoryOverlayCursor",
+				Visible = false,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+				TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+				ZIndex = 100,
+			};
+			widget.Viewport.AddChild(widget.OverlayCursor);
+		}
+
 		return true;
 	}
 
@@ -994,5 +1009,208 @@ public static partial class VrController
 
 		_vrUiOnMenuTv = true;
 		UpdateXrViewportHdrForUiMode();
+	}
+
+	static VrStatusWidget GetInventoryStatusWidget()
+	{
+		foreach (var widget in _statusWidgets)
+		{
+			if (widget.Kind == VrStatusWidgetKind.Inventory)
+			{
+				return widget;
+			}
+		}
+
+		return null;
+	}
+
+	static bool IsInventoryOverlayInteractive()
+	{
+		if (!ShouldShowVrStatusPanels() || uimanager.blockinput)
+		{
+			return false;
+		}
+
+		var widget = GetInventoryStatusWidget();
+		return widget?.Panel != null && widget.Panel.Visible && widget.Alpha > 0.001f;
+	}
+
+	static void ClearInventoryOverlayPointerState()
+	{
+		_inventoryOverlayHovering = false;
+		_inventoryOverlayLeftWasPressed = false;
+		_inventoryOverlayRightWasPressed = false;
+		_lastInventoryOverlayHudPos = new Vector2(-1f, -1f);
+		UpdateInventoryOverlayCursor(default, show: false);
+	}
+
+	static void UpdateInventoryOverlayCursor(Vector2 hudPos, bool show)
+	{
+		var widget = GetInventoryStatusWidget();
+		if (widget?.OverlayCursor == null)
+		{
+			return;
+		}
+
+		if (!show || playerdat.ObjectInHand == -1)
+		{
+			widget.OverlayCursor.Visible = false;
+			return;
+		}
+
+		var objList = UWTileMap.current_tilemap?.LevelObjects;
+		if (objList == null || playerdat.ObjectInHand <= 0 || playerdat.ObjectInHand >= objList.Length)
+		{
+			widget.OverlayCursor.Visible = false;
+			return;
+		}
+
+		var obj = objList[playerdat.ObjectInHand];
+		var tex = uimanager.grObjects.LoadImageAt(obj.item_id);
+		if (tex == null)
+		{
+			widget.OverlayCursor.Visible = false;
+			return;
+		}
+
+		widget.OverlayCursor.Texture = tex;
+		widget.OverlayCursor.Material = uimanager.grObjects.GetMaterial(obj.item_id);
+		widget.OverlayCursor.Size = tex.GetSize() * 4;
+		var localPos = hudPos - widget.HudRect.Position;
+		widget.OverlayCursor.Position = localPos + new Vector2(-tex.GetWidth(), -tex.GetHeight());
+		widget.OverlayCursor.Visible = true;
+	}
+
+	static bool TryGetStatusWidgetHit(
+		VrStatusWidget widget,
+		Vector3 rayOrigin,
+		Vector3 rayDir,
+		float maxDistance,
+		out Vector2 hudViewportPos,
+		out Vector3 hitWorld)
+	{
+		hudViewportPos = default;
+		hitWorld = rayOrigin + rayDir * maxDistance;
+		if (widget?.Panel == null || widget.Viewport == null || widget.Panel.Mesh is not QuadMesh quad)
+		{
+			return false;
+		}
+
+		var xf = widget.Panel.GlobalTransform;
+		var planeNormal = xf.Basis.Z;
+		var denom = planeNormal.Dot(rayDir);
+		if (Mathf.Abs(denom) < 1e-6f)
+		{
+			return false;
+		}
+
+		var t = (xf.Origin - rayOrigin).Dot(planeNormal) / denom;
+		if (t < 0f || t > maxDistance)
+		{
+			return false;
+		}
+
+		hitWorld = rayOrigin + rayDir * t;
+		var local = xf.AffineInverse() * hitWorld;
+		var half = quad.Size * 0.5f;
+		if (Mathf.Abs(local.X) > half.X || Mathf.Abs(local.Y) > half.Y)
+		{
+			return false;
+		}
+
+		var u = (local.X / quad.Size.X) + 0.5f;
+		var v = (local.Y / quad.Size.Y) + 0.5f;
+		var vpSize = widget.Viewport.Size;
+		var localVp = new Vector2(
+			Mathf.Clamp(u * vpSize.X, 0f, vpSize.X - 1f),
+			Mathf.Clamp((1f - v) * vpSize.Y, 0f, vpSize.Y - 1f));
+		hudViewportPos = widget.HudRect.Position + localVp;
+		return true;
+	}
+
+	/// <summary>
+	/// Raycast the head-locked inventory overlay and forward hits to the real HUD paperdoll.
+	/// </summary>
+	static void ApplyStatusOverlayPointerInput()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || _hudViewport == null || _rightController == null)
+		{
+			ClearInventoryOverlayPointerState();
+			return;
+		}
+
+		if (_hudPointerHovering)
+		{
+			_inventoryOverlayHovering = false;
+			_inventoryOverlayLeftWasPressed = false;
+			_inventoryOverlayRightWasPressed = false;
+			UpdateInventoryOverlayCursor(default, show: false);
+			return;
+		}
+
+		if (!IsInventoryOverlayInteractive())
+		{
+			ClearInventoryOverlayPointerState();
+			return;
+		}
+
+		var widget = GetInventoryStatusWidget();
+		var rayOrigin = _rightController.GlobalPosition;
+		var rayDir = GetControllerRayDir();
+		var hovering = TryGetStatusWidgetHit(
+			widget,
+			rayOrigin,
+			rayDir,
+			StatusOverlayPointerMaxDistance,
+			out var hudPos,
+			out var hitWorld);
+
+		_inventoryOverlayHovering = hovering;
+		if (!hovering)
+		{
+			_inventoryOverlayLeftWasPressed = false;
+			_inventoryOverlayRightWasPressed = false;
+			_lastInventoryOverlayHudPos = new Vector2(-1f, -1f);
+			UpdateInventoryOverlayCursor(default, show: false);
+			return;
+		}
+
+		UpdatePointerLaser(rayOrigin, hitWorld, visible: true);
+		if (_hudMouseLayer != null)
+		{
+			_hudMouseLayer.Visible = true;
+		}
+
+		if (hudPos != _lastInventoryOverlayHudPos)
+		{
+			_lastInventoryOverlayHudPos = hudPos;
+			PushHudMouseMotion(hudPos);
+		}
+
+		UpdateInventoryOverlayCursor(hudPos, show: true);
+
+		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+		if (leftPressed && !_inventoryOverlayLeftWasPressed)
+		{
+			if (!TryDismissMessageMore()
+				&& !TryConfirmYesNoPrompt(hudPos, yes: true)
+				&& !TrySelectConversationOption(hudPos))
+			{
+				PushHudMouseClick(hudPos, MouseButton.Left);
+			}
+		}
+		_inventoryOverlayLeftWasPressed = leftPressed;
+
+		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+		if (rightPressed && !_inventoryOverlayRightWasPressed)
+		{
+			if (!TryDismissMessageMore()
+				&& !TryConfirmYesNoPrompt(hudPos, yes: false)
+				&& !TrySelectConversationOption(hudPos))
+			{
+				PushHudMouseClick(hudPos, MouseButton.Right);
+			}
+		}
+		_inventoryOverlayRightWasPressed = rightPressed;
 	}
 }

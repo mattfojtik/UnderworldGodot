@@ -65,6 +65,10 @@ public static partial class VrController
 	static bool _hudPointerHovering;
 	static bool _hudPointerLeftWasPressed;
 	static bool _hudPointerRightWasPressed;
+	static bool _inventoryOverlayHovering;
+	static Vector2 _lastInventoryOverlayHudPos = new(-1f, -1f);
+	static bool _inventoryOverlayLeftWasPressed;
+	static bool _inventoryOverlayRightWasPressed;
 	static bool _worldPointerLeftWasPressed;
 	static bool _worldPointerRightWasPressed;
 	static float _pendingPickupRayDistance;
@@ -109,6 +113,7 @@ public static partial class VrController
 	const float DoorUseCooldownSeconds = 0.35f;
 	const float HudPointerMaxDistance = 2.5f;
 	const float MenuTvPointerMaxDistance = 4f;
+	const float StatusOverlayPointerMaxDistance = 4f;
 	static Vector3 MenuTvCameraLocalPosition => new(
 		0f,
 		uwsettings.instance.vr_menu_screen_offset_y,
@@ -688,6 +693,7 @@ public static partial class VrController
 		}
 
 		ApplyHudPointerInput();
+		ApplyStatusOverlayPointerInput();
 		ApplyWorldPointerInput();
 		UpdateHeldObjectVisual();
 		UpdateMessageScrollPanel();
@@ -1753,7 +1759,10 @@ public static partial class VrController
 				_hudMouseLayer.Visible = false;
 			}
 
-			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			if (!ShouldShowVrPointerLaser())
+			{
+				UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			}
 		}
 
 		UpdateXrViewportHdrForUiMode();
@@ -1762,7 +1771,14 @@ public static partial class VrController
 	static void SetHeadOverlaysVisible(bool visible)
 	{
 		_headOverlaysVisible = visible;
+		if (!ShouldShowVrPointerLaser())
+		{
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+		}
 	}
+
+	/// <summary>Laser is shown while either the hand HUD or head status overlays are open.</summary>
+	static bool ShouldShowVrPointerLaser() => _hudPanelVisible || _headOverlaysVisible;
 
 	static void RetryPendingVrHudSetup()
 	{
@@ -2587,7 +2603,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (_hudPanelVisible && _hudPointerHovering)
+		if ((_hudPanelVisible && _hudPointerHovering) || _inventoryOverlayHovering)
 		{
 			_worldPointerLeftWasPressed = false;
 			_worldPointerRightWasPressed = false;
@@ -2596,7 +2612,14 @@ public static partial class VrController
 
 		var rayOrigin = _rightController.GlobalPosition;
 		var rayDir = GetControllerRayDir();
-		UpdateGameplayPointerLaser(rayOrigin, rayDir);
+		if (ShouldShowVrPointerLaser())
+		{
+			UpdateGameplayPointerLaser(rayOrigin, rayDir);
+		}
+		else
+		{
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+		}
 
 		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
 		var inAttackMode = uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
@@ -2754,7 +2777,7 @@ public static partial class VrController
 		}
 
 		// HUD panel already shows the held sprite while the laser is over it.
-		if (_hudPointerHovering)
+		if (_hudPointerHovering || _inventoryOverlayHovering)
 		{
 			SetHeldObjectNodeVisible(false);
 			return;
@@ -3533,7 +3556,11 @@ public static partial class VrController
 				_hudPointerHovering = false;
 				_hudPointerLeftWasPressed = false;
 				_hudPointerRightWasPressed = false;
-				UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+				if (!ShouldShowVrPointerLaser())
+				{
+					UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+				}
+
 				return;
 			}
 		}
@@ -3561,12 +3588,15 @@ public static partial class VrController
 			return;
 		}
 
-		var laserEnd = hovering ? hitWorld : rayOrigin + rayDir * pointerMaxDistance;
-		if (menuOnly || menuScreen || hovering)
+		if (hovering)
 		{
-			UpdatePointerLaser(rayOrigin, laserEnd, visible: true);
+			UpdatePointerLaser(rayOrigin, hitWorld, visible: true);
 		}
-		else if (!_hudPanelVisible)
+		else if (menuScreen)
+		{
+			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * pointerMaxDistance, visible: true);
+		}
+		else if (!ShouldShowVrPointerLaser())
 		{
 			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
 		}
@@ -3899,6 +3929,9 @@ public static partial class VrController
 			if ((_hudPointerHovering && _hudPanelVisible &&
 				(IsButtonPressed(_rightController, HudLeftClickActions) ||
 				 IsButtonPressed(_rightController, HudRightClickActions)))
+				|| (_inventoryOverlayHovering &&
+					(IsButtonPressed(_rightController, HudLeftClickActions) ||
+					 IsButtonPressed(_rightController, HudRightClickActions)))
 				|| IsHud3DViewportRightHeld
 				|| IsVrWorldRightHeld)
 			{
