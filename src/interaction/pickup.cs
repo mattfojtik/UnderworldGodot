@@ -415,10 +415,18 @@ namespace Underworld
             uimanager.instance.TypedInput.CaretColumn =uimanager.instance.TypedInput.Text.Length;
             uimanager.instance.scroll.Clear();
             uimanager.AddToMessageScroll("Move how many? {TYPEDINPUT}|");
+            VrController.ShowQuantityNumberPad(obj.ObjectQuantity);
 
-            while (MessageDisplay.WaitingForTypedInput)
+            try
             {
-                yield return new WaitOneFrame();
+                while (MessageDisplay.WaitingForTypedInput)
+                {
+                    yield return new WaitOneFrame();
+                }
+            }
+            finally
+            {
+                VrController.HideQuantityNumberPad();
             }
 
             var response = uimanager.instance.TypedInput.Text;

@@ -65,6 +65,33 @@ namespace Underworld
             main.cameraPitchGimbal_world?.Set("MOVE", true);
         }
 
+        /// <summary>Ends a typed-input prompt (Enter key equivalent).</summary>
+        public static void CompleteTypedInput()
+        {
+            if (!WaitingForTypedInput)
+            {
+                return;
+            }
+
+            uimanager.instance.scroll.Clear();
+            WaitingForTypedInput = false;
+            main.cameraPitchGimbal_world?.Set("MOVE", true);
+        }
+
+        /// <summary>Cancels a typed-input prompt (Escape key equivalent).</summary>
+        public static void CancelTypedInput()
+        {
+            if (!WaitingForTypedInput)
+            {
+                return;
+            }
+
+            uimanager.instance.TypedInput.Text = "";
+            uimanager.instance.scroll.Clear();
+            WaitingForTypedInput = false;
+            main.cameraPitchGimbal_world?.Set("MOVE", true);
+        }
+
         public RichTextLabel[] OutputControl;
 
         public MessageScrollLine[] Lines = new MessageScrollLine[5];

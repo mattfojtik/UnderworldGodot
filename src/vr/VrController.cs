@@ -73,6 +73,8 @@ public static partial class VrController
 	static bool _statusOverlayRightWasPressed;
 	static bool _worldPointerLeftWasPressed;
 	static bool _worldPointerRightWasPressed;
+	static bool _numberPadLeftWasPressed;
+	static Vector2 _lastNumberPadPointerPos = new(-1f, -1f);
 	static bool _combatGripWasPressed;
 	static float _pendingPickupRayDistance;
 	static int _vrHeldObjectIndex = -1;
@@ -702,12 +704,30 @@ public static partial class VrController
 			return;
 		}
 
-		ApplyHudPointerInput();
-		ApplyStatusOverlayPointerInput();
+		if (VrNumberPad.IsVisible)
+		{
+			ApplyNumberPadPointerInput();
+		}
+		else
+		{
+			ApplyHudPointerInput();
+			ApplyStatusOverlayPointerInput();
+		}
+
 		ApplyCombatModeToggleInput();
 		VrCombatMotion.Tick();
 		VrCombatMotionDebug.Update(VrCombatMotion.ShouldShowGesturePlanes(), VrCombatMotion.GetDebugWeaponHandLocal());
-		ApplyWorldPointerInput();
+		if (!VrNumberPad.IsVisible)
+		{
+			ApplyWorldPointerInput();
+		}
+		else
+		{
+			IsVrWorldPointerActive = false;
+			IsVrWorldRightHeld = false;
+			_worldPointerLeftWasPressed = false;
+			_worldPointerRightWasPressed = false;
+		}
 		UpdateVrGameplayPointerLaser();
 		UpdateHeldObjectVisual();
 		UpdateMessageScrollPanel();
@@ -1259,6 +1279,31 @@ public static partial class VrController
 
 	static float MessageScrollNowSeconds() => HeadOverlayNowSeconds();
 
+	/// <summary>Show a head-locked number pad for stack quantity prompts.</summary>
+	public static void ShowQuantityNumberPad(int maxQuantity)
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || !uimanager.InGame || maxQuantity < 1)
+		{
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld == null || _xrCamera == null)
+		{
+			return;
+		}
+
+		VrNumberPad.Show(underworld, _xrCamera, maxQuantity);
+		_numberPadLeftWasPressed = false;
+		_lastNumberPadPointerPos = new Vector2(-1f, -1f);
+		NotifyMessageScrollUpdated();
+	}
+
+	public static void HideQuantityNumberPad()
+	{
+		VrNumberPad.Hide();
+	}
+
 	/// <summary>Call when bottom message scroll text changes (new line printed).</summary>
 	public static void NotifyMessageScrollUpdated()
 	{
@@ -1691,9 +1736,9 @@ public static partial class VrController
 
 		if (MessageDisplay.WaitingForTypedInput)
 		{
-			MessageDisplay.WaitingForTypedInput = false;
-			uimanager.instance.TypedInput.Text = "";
+			MessageDisplay.CancelTypedInput();
 			VrOnScreenKeyboard.Hide();
+			VrNumberPad.Hide();
 			GD.Print("[VR] Typed input cancelled (left grip = Escape).");
 			return;
 		}
@@ -2709,6 +2754,48 @@ public static partial class VrController
 		SetHudPanelVisible(true);
 	}
 
+	static void ApplyNumberPadPointerInput()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null)
+		{
+			_numberPadLeftWasPressed = false;
+			_lastNumberPadPointerPos = new Vector2(-1f, -1f);
+			return;
+		}
+
+		var rayOrigin = _rightController.GlobalPosition;
+		var rayDir = GetControllerRayDir();
+		var hovering = VrNumberPad.TryGetHit(
+			rayOrigin,
+			rayDir,
+			HudPointerMaxDistance,
+			out var viewportPos,
+			out var hitWorld);
+
+		if (hovering)
+		{
+			UpdatePointerLaser(rayOrigin, hitWorld, visible: true);
+			if (viewportPos != _lastNumberPadPointerPos)
+			{
+				_lastNumberPadPointerPos = viewportPos;
+				VrNumberPad.PushMouseMotion(viewportPos);
+			}
+		}
+		else
+		{
+			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * 0.35f, visible: true);
+			_lastNumberPadPointerPos = new Vector2(-1f, -1f);
+		}
+
+		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+		if (hovering && leftPressed && !_numberPadLeftWasPressed)
+		{
+			VrNumberPad.PushMouseClick(viewportPos, MouseButton.Left);
+		}
+
+		_numberPadLeftWasPressed = leftPressed;
+	}
+
 	static void ApplyCombatModeToggleInput()
 	{
 		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null
@@ -3047,9 +3134,13 @@ public static partial class VrController
 			return;
 		}
 
-		if (!ShouldShowVrGameplayPointerLaser())
+		if (!ShouldShowVrGameplayPointerLaser() || VrNumberPad.IsVisible)
 		{
-			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			if (!VrNumberPad.IsVisible)
+			{
+				UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			}
+
 			return;
 		}
 
@@ -4091,7 +4182,7 @@ public static partial class VrController
 
 	static void ApplyDoorInteraction()
 	{
-		if (!IsActive || playerdat.ParalyseTimer > 0 || !uimanager.InGame
+		if (!IsActive || playerdat.ParalyseTimer > 0 || !uimanager.InGame || uimanager.blockinput
 			|| IsHudOnMenuScreen() || uimanager.AtMainMenu
 			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE)
 		{

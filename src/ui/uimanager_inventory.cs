@@ -746,10 +746,18 @@ namespace Underworld
             uimanager.instance.TypedInput.CaretColumn = uimanager.instance.TypedInput.Text.Length;
             instance.scroll.Clear();
             AddToMessageScroll("Move how many? {TYPEDINPUT}|", mode: MessageDisplay.MessageDisplayMode.TypedInput);
+            VrController.ShowQuantityNumberPad(objAtSlot.ObjectQuantity);
 
-            while (MessageDisplay.WaitingForTypedInput)
+            try
             {
-                yield return new WaitOneFrame();
+                while (MessageDisplay.WaitingForTypedInput)
+                {
+                    yield return new WaitOneFrame();
+                }
+            }
+            finally
+            {
+                VrController.HideQuantityNumberPad();
             }
             //restore currentslot as this gets wiped once the calling function has ended
             CurrentSlot = currslot;
