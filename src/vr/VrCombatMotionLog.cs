@@ -130,7 +130,8 @@ namespace Underworld
 			Vector3 peak,
 			Vector3 thrust,
 			float peakDepth,
-			int classifierSwing = -1)
+			int classifierSwing = -1,
+			string extra = "")
 		{
 			if (!IsEnabled)
 			{
@@ -152,7 +153,7 @@ namespace Underworld
 				thrust,
 				peakDepth,
 				combat.PlayerAttackCharge,
-				string.Empty);
+				extra);
 		}
 
 		public static void Flush()

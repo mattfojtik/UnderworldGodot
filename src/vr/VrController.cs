@@ -701,6 +701,7 @@ public static partial class VrController
 		ApplyStatusOverlayPointerInput();
 		ApplyCombatModeToggleInput();
 		VrCombatMotion.Tick();
+		VrCombatMotionDebug.Update(VrCombatMotion.ShouldShowGesturePlanes(), VrCombatMotion.GetDebugWeaponHandLocal());
 		ApplyWorldPointerInput();
 		UpdateVrGameplayPointerLaser();
 		UpdateHeldObjectVisual();
@@ -2300,6 +2301,11 @@ public static partial class VrController
 			rel.Dot(frame.Basis.Y),
 			rel.Dot(frame.Basis.Z));
 	}
+
+	/// <summary>Torso-local gesture frame for debug overlays (chest origin, body yaw).</summary>
+	public static Transform3D GetTorsoTransform() => GetTorsoFrame();
+
+	internal static Node3D GetUnderworldNode() => _gameRoot?.GetParent<Node3D>();
 
 	static Transform3D GetTorsoFrame()
 	{

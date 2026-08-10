@@ -5,29 +5,26 @@ namespace Underworld
 	/// <summary>Primary-hand pullback / thrust gestures for native VR melee and ranged charging.</summary>
 	public static class VrCombatMotion
 	{
-		const float PullBackDetect = 0.05f;
-		const float PullBackCharge = 0.075f;
-		const float ReleaseForwardThreshold = 0.08f;
-		// Tuned from vr_combat_motion.log calibration passes.
-		const float WindUpMinMetric = 0.04f;
-		const float BashNegativeUpMax = -0.23f;
-		const float BashMinBack = 0.16f;
-		const float StabPocketMaxBack = 0.14f;
-		const float StabPocketMaxSide = 0.12f;
-		const float StabPocketMinUp = -0.20f;
-		const float SlashMinSide = 0.08f;
-		const float SlashLateralSide = 0.075f;
-		const float SlashMinBack = 0.10f;
-		const float DegenerateSlashDepth = 0.20f;
-		const float SlashThrustSideMin = 0.10f;
-		const float SlashThrustSideMinShallow = 0.035f;
-		const float SlashThrustSideOverForward = 0.30f;
-		const float SlashThrustMaxBack = 0.14f;
+		// Torso-local frame (VrController.WorldToTorsoLocal): X+ right, Y+ up, Z+ forward.
+		// Origin is ~chest height on the avatar. Tunable fixed planes — not guard-relative.
+
+		/// <summary>Left/right divider. Slash when the hand crosses this plane.</summary>
+		public const float CenterlineX = 0f;
+
+		/// <summary>Neck height. Bash when Y crosses this before other gestures.</summary>
+		public const float NeckPlaneY = 0.28f;
+
+		/// <summary>Depth plane toward the body. Stab when Z stays behind this (lower Z).</summary>
+		public const float StabPlaneZ = 0.12f;
+
+		/// <summary>Frames hand must stay behind stab plane before stab can charge (lets slash register first).</summary>
+		const int StabChargeDelayFrames = 5;
+
+		const float ReleaseForwardThreshold = 0.10f;
 
 		enum MotionState
 		{
 			Idle,
-			PullingBack,
 			Charging,
 		}
 
@@ -35,7 +32,16 @@ namespace Underworld
 		static bool _attackHeldDown;
 		static Vector3 _strokeStartLocal;
 		static Vector3 _peakPullbackLocal;
-		static float _peakPullbackDepth;
+		static int _chargeSwingType;
+		static bool _crossedCenterline;
+		static bool _reachedAboveNeck;
+		static bool _wentBehindStabPlane;
+		static int _behindStabPlaneFrames;
+		static bool _strokeTrackingActive;
+		static bool _hasPrevTrackX;
+		static float _prevTrackX;
+		static float _strokeMinX;
+		static float _strokeMaxX;
 
 		public static bool UseVrCombatInput()
 		{
@@ -52,7 +58,130 @@ namespace Underworld
 		{
 			_state = MotionState.Idle;
 			_attackHeldDown = false;
-			_peakPullbackDepth = 0f;
+			_chargeSwingType = -1;
+			ResetStrokeFlags();
+		}
+
+		static void ResetStrokeFlags()
+		{
+			_crossedCenterline = false;
+			_reachedAboveNeck = false;
+			_wentBehindStabPlane = false;
+			_behindStabPlaneFrames = 0;
+			_strokeTrackingActive = false;
+			_hasPrevTrackX = false;
+			_prevTrackX = 0f;
+			_strokeMinX = 0f;
+			_strokeMaxX = 0f;
+		}
+
+		static bool CrossedPlane(float previous, float current, float plane)
+		{
+			return (previous - plane) * (current - plane) < 0f;
+		}
+
+		static void TrackStrokePlanes(Vector3 local)
+		{
+			if (!_strokeTrackingActive)
+			{
+				_strokeTrackingActive = true;
+				_strokeMinX = local.X;
+				_strokeMaxX = local.X;
+			}
+			else
+			{
+				_strokeMinX = Mathf.Min(_strokeMinX, local.X);
+				_strokeMaxX = Mathf.Max(_strokeMaxX, local.X);
+
+				if (_hasPrevTrackX && CrossedPlane(_prevTrackX, local.X, CenterlineX))
+				{
+					_crossedCenterline = true;
+				}
+			}
+
+			_prevTrackX = local.X;
+			_hasPrevTrackX = true;
+
+			if (_strokeMinX < CenterlineX && _strokeMaxX > CenterlineX)
+			{
+				_crossedCenterline = true;
+			}
+
+			if (local.Y >= NeckPlaneY)
+			{
+				_reachedAboveNeck = true;
+			}
+
+			if (local.Z <= StabPlaneZ)
+			{
+				_behindStabPlaneFrames++;
+			}
+			else
+			{
+				_behindStabPlaneFrames = 0;
+			}
+
+			_wentBehindStabPlane = _behindStabPlaneFrames >= StabChargeDelayFrames;
+		}
+
+		static bool IsSlashGesture()
+		{
+			return _crossedCenterline;
+		}
+
+		static bool TryBeginCharge(out int swingType)
+		{
+			swingType = -1;
+
+			if (IsSlashGesture())
+			{
+				swingType = 0;
+				return true;
+			}
+
+			if (_reachedAboveNeck)
+			{
+				swingType = 1;
+				return true;
+			}
+
+			if (_wentBehindStabPlane)
+			{
+				swingType = 2;
+				return true;
+			}
+
+			return false;
+		}
+
+		static void ApplySlashUpgradeIfNeeded()
+		{
+			if (!IsSlashGesture() || _chargeSwingType == 0)
+			{
+				return;
+			}
+
+			_chargeSwingType = 0;
+			combat.WeaponSwingTypePlayer = 0;
+		}
+
+		static string FormatPlaneExtra(Vector3 local)
+		{
+			return string.Format(
+				System.Globalization.CultureInfo.InvariantCulture,
+				"local_x={0:0.####},local_y={1:0.####},local_z={2:0.####},"
+				+ "cross_lr={3},span_x={4:0.####},above_neck={5},behind_z={6},behind_frames={7},"
+				+ "plane_neck_y={8:0.####},plane_stab_z={9:0.####}",
+				local.X,
+				local.Y,
+				local.Z,
+				_crossedCenterline ? 1 : 0,
+				_strokeMaxX - _strokeMinX,
+				_reachedAboveNeck ? 1 : 0,
+				_wentBehindStabPlane ? 1 : 0,
+				_behindStabPlaneFrames,
+				NeckPlaneY,
+				StabPlaneZ);
 		}
 
 		public static void Tick()
@@ -90,57 +219,37 @@ namespace Underworld
 			switch (_state)
 			{
 				case MotionState.Idle:
-					if (local.Z < -PullBackDetect)
-					{
-						_state = MotionState.PullingBack;
-						_strokeStartLocal = local;
-						_peakPullbackLocal = local;
-						_peakPullbackDepth = -local.Z;
-						LogMotionSample("pull_start", world, local, -1);
-					}
-					break;
+					TrackStrokePlanes(local);
 
-				case MotionState.PullingBack:
-					if (-local.Z > _peakPullbackDepth)
-					{
-						_peakPullbackDepth = -local.Z;
-						_peakPullbackLocal = local;
-					}
-
-					if (_peakPullbackDepth >= PullBackCharge)
+					if (TryBeginCharge(out var swingType))
 					{
 						_state = MotionState.Charging;
 						_attackHeldDown = true;
-						combat.WeaponSwingTypePlayer = ClassifyWindUp(_strokeStartLocal, _peakPullbackLocal, _peakPullbackDepth);
+						_chargeSwingType = swingType;
+						_strokeStartLocal = local;
+						_peakPullbackLocal = local;
+						combat.WeaponSwingTypePlayer = _chargeSwingType;
 						LogMotionSample("charge_start", world, local, combat.WeaponSwingTypePlayer);
-					}
-					else if (local.Z > -PullBackDetect * 0.35f)
-					{
-						LogMotionSample("pull_cancel", world, local, -1);
-						_state = MotionState.Idle;
 					}
 					break;
 
 				case MotionState.Charging:
-					if (-local.Z > _peakPullbackDepth)
+					TrackStrokePlanes(local);
+					ApplySlashUpgradeIfNeeded();
+
+					if (local.Z < _peakPullbackLocal.Z)
 					{
-						_peakPullbackDepth = -local.Z;
 						_peakPullbackLocal = local;
-						combat.WeaponSwingTypePlayer = ClassifyWindUp(_strokeStartLocal, _peakPullbackLocal, _peakPullbackDepth);
 					}
 
 					if (local.Z > _peakPullbackLocal.Z + ReleaseForwardThreshold)
 					{
 						var thrust = local - _peakPullbackLocal;
-						combat.WeaponSwingTypePlayer = ClassifyReleaseStroke(
-							_strokeStartLocal,
-							_peakPullbackLocal,
-							thrust,
-							_peakPullbackDepth);
+						combat.WeaponSwingTypePlayer = _chargeSwingType;
 						LogMotionSample("release", world, local, combat.WeaponSwingTypePlayer, thrust);
 						_attackHeldDown = false;
 						_state = MotionState.Idle;
-						_peakPullbackDepth = 0f;
+						ResetStrokeFlags();
 					}
 					break;
 			}
@@ -148,8 +257,26 @@ namespace Underworld
 			VrCombatMotionLog.Flush();
 		}
 
+		public static bool ShouldShowGesturePlanes()
+		{
+			return VrController.IsActive
+				&& !uwsettings.instance.vr_mirror
+				&& uimanager.InGame
+				&& uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;
+		}
+
+		/// <summary>Torso-local weapon-hand position for gesture debug overlays.</summary>
+		public static Vector3 GetDebugWeaponHandLocal()
+		{
+			var controller = VrController.GetWeaponHandController();
+			return controller != null
+				? VrController.WorldToTorsoLocal(controller.GlobalPosition)
+				: Vector3.Zero;
+		}
+
 		static void LogMotionSample(string eventName, Vector3 world, Vector3 local, int classifierSwing, Vector3 thrust = default)
 		{
+			var extra = classifierSwing >= 0 ? FormatPlaneExtra(local) : string.Empty;
 			VrCombatMotionLog.LogSample(
 				eventName: eventName,
 				motionState: _state.ToString(),
@@ -158,108 +285,9 @@ namespace Underworld
 				strokeStart: _strokeStartLocal,
 				peak: _peakPullbackLocal,
 				thrust: thrust,
-				peakDepth: _peakPullbackDepth,
-				classifierSwing: classifierSwing);
-		}
-
-		static int ClassifyWindUp(Vector3 startLocal, Vector3 peakLocal, float peakDepth)
-		{
-			return ClassifySwing(startLocal, peakLocal, peakDepth);
-		}
-
-		static int ClassifyReleaseStroke(
-			Vector3 startLocal,
-			Vector3 peakLocal,
-			Vector3 thrust,
-			float peakDepth)
-		{
-			var endLocal = peakLocal + thrust;
-			var windUp = peakLocal - startLocal;
-			var back = -windUp.Z;
-			var up = windUp.Y;
-			var slashThrustSide = Mathf.Abs(GetSlashSideComponent(thrust.X, playerdat.isLefty));
-
-			if (IsDegenerateWindUp(back, up))
-			{
-				if (slashThrustSide >= SlashThrustSideMin
-					&& slashThrustSide > Mathf.Abs(thrust.Z) * SlashThrustSideOverForward)
-				{
-					return 0;
-				}
-
-				if (peakDepth >= DegenerateSlashDepth)
-				{
-					return 0;
-				}
-
-				return 2;
-			}
-
-			if (slashThrustSide >= SlashThrustSideMinShallow
-				&& slashThrustSide > Mathf.Abs(thrust.Z) * SlashThrustSideOverForward
-				&& back < SlashThrustMaxBack)
-			{
-				return 0;
-			}
-
-			return ClassifySwing(startLocal, peakLocal, peakDepth, endLocal);
-		}
-
-		static int ClassifySwing(Vector3 startLocal, Vector3 peakLocal, float peakDepth, Vector3? endLocal = null)
-		{
-			var windUp = peakLocal - startLocal;
-			if (IsDegenerateWindUp(-windUp.Z, windUp.Y) && endLocal.HasValue)
-			{
-				windUp = endLocal.Value - startLocal;
-			}
-
-			var up = windUp.Y;
-			var back = -windUp.Z;
-			var slashSide = GetSlashSideComponent(windUp.X, playerdat.isLefty);
-			var absSide = Mathf.Abs(slashSide);
-
-			if (IsDegenerateWindUp(back, up))
-			{
-				return peakDepth >= DegenerateSlashDepth ? 0 : 2;
-			}
-
-			if (up <= BashNegativeUpMax && back >= BashMinBack)
-			{
-				return 1;
-			}
-
-			if (back < StabPocketMaxBack
-				&& absSide < StabPocketMaxSide
-				&& up > StabPocketMinUp)
-			{
-				return 2;
-			}
-
-			if (IsLateralSlashWindUp(slashSide)
-				&& absSide >= SlashMinSide
-				&& back >= SlashMinBack)
-			{
-				return 0;
-			}
-
-			return 2;
-		}
-
-		static bool IsDegenerateWindUp(float back, float up)
-		{
-			return back < WindUpMinMetric && up < WindUpMinMetric;
-		}
-
-		static bool IsLateralSlashWindUp(float slashSide)
-		{
-			return playerdat.isLefty
-				? slashSide >= SlashLateralSide
-				: slashSide <= -SlashLateralSide;
-		}
-
-		static float GetSlashSideComponent(float deltaX, bool lefty)
-		{
-			return lefty ? deltaX : -deltaX;
+				peakDepth: 0f,
+				classifierSwing: classifierSwing,
+				extra: extra);
 		}
 	}
 }
