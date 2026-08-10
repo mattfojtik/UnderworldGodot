@@ -2099,6 +2099,7 @@ public static partial class VrController
 		if (pressed && !_quitWasPressed)
 		{
 			GD.Print("[VR] Quit requested (X button).");
+			VrCombatMotionLog.CloseSession();
 			_sceneTree?.Quit();
 		}
 
@@ -2331,10 +2332,29 @@ public static partial class VrController
 			return playerdat.PlayerCameraPitch_dseg_67d6_33D6;
 		}
 
-		var headEuler = _xrCamera.Transform.Basis.GetEuler(EulerOrder.Yxz);
-		var elevDeg = Mathf.RadToDeg(-headEuler.X);
+		var forward = -_xrCamera.GlobalTransform.Basis.Z;
+		var horizLen = Mathf.Sqrt(forward.X * forward.X + forward.Z * forward.Z);
+		if (horizLen < 1e-5f)
+		{
+			return playerdat.PlayerCameraPitch_dseg_67d6_33D6;
+		}
+
+		var elevDeg = Mathf.RadToDeg(Mathf.Atan2(forward.Y, horizLen));
 		var pitchIndex = Mathf.Clamp(elevDeg / 6f, -4f, 16f);
 		return (short)(pitchIndex * 0x300);
+	}
+
+	/// <summary>Refresh body heading and look pitch immediately before a combat strike.</summary>
+	public static void SyncCombatAimFromHead()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || !uimanager.InGame || _xrCamera == null)
+		{
+			return;
+		}
+
+		SyncPlayerYawFromHead();
+		playerdat.PlayerCameraPitch_dseg_67d6_33D6 = GetHeadPitchUw();
+		motion.SyncPlayerObjectHeadingFromCameraYaw(playerdat.playerObject);
 	}
 
 	/// <summary>Map head look to viewport coords for ranged combat and legacy combat helpers.</summary>
@@ -2383,6 +2403,7 @@ public static partial class VrController
 		var pressed = IsButtonPressed(_rightController, JumpButtonActions);
 		if (pressed && !_jumpWasPressed)
 		{
+			VrCombatMotionLog.LogJumpMarker();
 			motion.MotionInputPressed = 7;
 		}
 

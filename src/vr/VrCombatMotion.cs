@@ -5,12 +5,24 @@ namespace Underworld
 	/// <summary>Primary-hand pullback / thrust gestures for native VR melee and ranged charging.</summary>
 	public static class VrCombatMotion
 	{
-		const float PullBackThreshold = 0.14f;
-		const float ReleaseForwardThreshold = 0.11f;
-		const float StabLowY = 0.05f;
-		const float BashHighY = 0.32f;
-		const float SlashCrossX = 0.14f;
-		const float SameSideMinX = 0.06f;
+		const float PullBackDetect = 0.05f;
+		const float PullBackCharge = 0.075f;
+		const float ReleaseForwardThreshold = 0.08f;
+		// Tuned from vr_combat_motion.log calibration passes.
+		const float WindUpMinMetric = 0.04f;
+		const float BashNegativeUpMax = -0.23f;
+		const float BashMinBack = 0.16f;
+		const float StabPocketMaxBack = 0.14f;
+		const float StabPocketMaxSide = 0.12f;
+		const float StabPocketMinUp = -0.20f;
+		const float SlashMinSide = 0.08f;
+		const float SlashLateralSide = 0.075f;
+		const float SlashMinBack = 0.10f;
+		const float DegenerateSlashDepth = 0.20f;
+		const float SlashThrustSideMin = 0.10f;
+		const float SlashThrustSideMinShallow = 0.035f;
+		const float SlashThrustSideOverForward = 0.30f;
+		const float SlashThrustMaxBack = 0.14f;
 
 		enum MotionState
 		{
@@ -71,17 +83,20 @@ namespace Underworld
 				VrController.UpdateViewPortMouseFromHeadAim();
 			}
 
-			var local = VrController.WorldToTorsoLocal(controller.GlobalPosition);
+			var world = controller.GlobalPosition;
+			var local = VrController.WorldToTorsoLocal(world);
+			LogMotionSample("sample", world, local, -1);
 
 			switch (_state)
 			{
 				case MotionState.Idle:
-					if (local.Z < -PullBackThreshold)
+					if (local.Z < -PullBackDetect)
 					{
 						_state = MotionState.PullingBack;
 						_strokeStartLocal = local;
 						_peakPullbackLocal = local;
 						_peakPullbackDepth = -local.Z;
+						LogMotionSample("pull_start", world, local, -1);
 					}
 					break;
 
@@ -92,14 +107,16 @@ namespace Underworld
 						_peakPullbackLocal = local;
 					}
 
-					if (_peakPullbackDepth >= PullBackThreshold)
+					if (_peakPullbackDepth >= PullBackCharge)
 					{
 						_state = MotionState.Charging;
 						_attackHeldDown = true;
-						combat.WeaponSwingTypePlayer = ClassifySwingAtPeak(_peakPullbackLocal);
+						combat.WeaponSwingTypePlayer = ClassifyWindUp(_strokeStartLocal, _peakPullbackLocal, _peakPullbackDepth);
+						LogMotionSample("charge_start", world, local, combat.WeaponSwingTypePlayer);
 					}
-					else if (local.Z > -PullBackThreshold * 0.35f)
+					else if (local.Z > -PullBackDetect * 0.35f)
 					{
+						LogMotionSample("pull_cancel", world, local, -1);
 						_state = MotionState.Idle;
 					}
 					break;
@@ -109,71 +126,140 @@ namespace Underworld
 					{
 						_peakPullbackDepth = -local.Z;
 						_peakPullbackLocal = local;
-						combat.WeaponSwingTypePlayer = ClassifySwingAtPeak(_peakPullbackLocal);
+						combat.WeaponSwingTypePlayer = ClassifyWindUp(_strokeStartLocal, _peakPullbackLocal, _peakPullbackDepth);
 					}
 
 					if (local.Z > _peakPullbackLocal.Z + ReleaseForwardThreshold)
 					{
-						combat.WeaponSwingTypePlayer = ClassifyReleaseStroke(_peakPullbackLocal, local);
+						var thrust = local - _peakPullbackLocal;
+						combat.WeaponSwingTypePlayer = ClassifyReleaseStroke(
+							_strokeStartLocal,
+							_peakPullbackLocal,
+							thrust,
+							_peakPullbackDepth);
+						LogMotionSample("release", world, local, combat.WeaponSwingTypePlayer, thrust);
 						_attackHeldDown = false;
 						_state = MotionState.Idle;
 						_peakPullbackDepth = 0f;
 					}
 					break;
 			}
+
+			VrCombatMotionLog.Flush();
 		}
 
-		static int ClassifySwingAtPeak(Vector3 peakLocal)
+		static void LogMotionSample(string eventName, Vector3 world, Vector3 local, int classifierSwing, Vector3 thrust = default)
 		{
-			return ClassifyReleaseStroke(peakLocal, peakLocal);
+			VrCombatMotionLog.LogSample(
+				eventName: eventName,
+				motionState: _state.ToString(),
+				world: world,
+				local: local,
+				strokeStart: _strokeStartLocal,
+				peak: _peakPullbackLocal,
+				thrust: thrust,
+				peakDepth: _peakPullbackDepth,
+				classifierSwing: classifierSwing);
 		}
 
-		static int ClassifyReleaseStroke(Vector3 startLocal, Vector3 endLocal)
+		static int ClassifyWindUp(Vector3 startLocal, Vector3 peakLocal, float peakDepth)
 		{
-			var lefty = playerdat.isLefty;
-			var delta = endLocal - startLocal;
+			return ClassifySwing(startLocal, peakLocal, peakDepth);
+		}
 
-			if (endLocal.Y >= BashHighY)
+		static int ClassifyReleaseStroke(
+			Vector3 startLocal,
+			Vector3 peakLocal,
+			Vector3 thrust,
+			float peakDepth)
+		{
+			var endLocal = peakLocal + thrust;
+			var windUp = peakLocal - startLocal;
+			var back = -windUp.Z;
+			var up = windUp.Y;
+			var slashThrustSide = Mathf.Abs(GetSlashSideComponent(thrust.X, playerdat.isLefty));
+
+			if (IsDegenerateWindUp(back, up))
 			{
-				return 1; // bash
+				if (slashThrustSide >= SlashThrustSideMin
+					&& slashThrustSide > Mathf.Abs(thrust.Z) * SlashThrustSideOverForward)
+				{
+					return 0;
+				}
+
+				if (peakDepth >= DegenerateSlashDepth)
+				{
+					return 0;
+				}
+
+				return 2;
 			}
 
-			if (endLocal.Y <= StabLowY && IsSameSide(endLocal.X, lefty))
+			if (slashThrustSide >= SlashThrustSideMinShallow
+				&& slashThrustSide > Mathf.Abs(thrust.Z) * SlashThrustSideOverForward
+				&& back < SlashThrustMaxBack)
 			{
-				return 2; // stab
+				return 0;
 			}
 
-			if (Mathf.Abs(delta.X) >= SlashCrossX || CrossesTorso(startLocal.X, endLocal.X))
+			return ClassifySwing(startLocal, peakLocal, peakDepth, endLocal);
+		}
+
+		static int ClassifySwing(Vector3 startLocal, Vector3 peakLocal, float peakDepth, Vector3? endLocal = null)
+		{
+			var windUp = peakLocal - startLocal;
+			if (IsDegenerateWindUp(-windUp.Z, windUp.Y) && endLocal.HasValue)
 			{
-				return 0; // slash
+				windUp = endLocal.Value - startLocal;
 			}
 
-			if (endLocal.Y > 0.18f)
+			var up = windUp.Y;
+			var back = -windUp.Z;
+			var slashSide = GetSlashSideComponent(windUp.X, playerdat.isLefty);
+			var absSide = Mathf.Abs(slashSide);
+
+			if (IsDegenerateWindUp(back, up))
+			{
+				return peakDepth >= DegenerateSlashDepth ? 0 : 2;
+			}
+
+			if (up <= BashNegativeUpMax && back >= BashMinBack)
 			{
 				return 1;
 			}
 
-			if (endLocal.Y <= StabLowY && Mathf.Abs(endLocal.X) >= SameSideMinX)
+			if (back < StabPocketMaxBack
+				&& absSide < StabPocketMaxSide
+				&& up > StabPocketMinUp)
 			{
 				return 2;
 			}
 
-			return 0;
-		}
-
-		static bool IsSameSide(float localX, bool lefty)
-		{
-			return lefty ? localX <= -SameSideMinX : localX >= SameSideMinX;
-		}
-
-		static bool CrossesTorso(float startX, float endX)
-		{
-			if (Mathf.Sign(startX) == Mathf.Sign(endX))
+			if (IsLateralSlashWindUp(slashSide)
+				&& absSide >= SlashMinSide
+				&& back >= SlashMinBack)
 			{
-				return false;
+				return 0;
 			}
 
-			return Mathf.Abs(startX) >= SameSideMinX && Mathf.Abs(endX) >= SameSideMinX;
+			return 2;
+		}
+
+		static bool IsDegenerateWindUp(float back, float up)
+		{
+			return back < WindUpMinMetric && up < WindUpMinMetric;
+		}
+
+		static bool IsLateralSlashWindUp(float slashSide)
+		{
+			return playerdat.isLefty
+				? slashSide >= SlashLateralSide
+				: slashSide <= -SlashLateralSide;
+		}
+
+		static float GetSlashSideComponent(float deltaX, bool lefty)
+		{
+			return lefty ? deltaX : -deltaX;
 		}
 	}
 }

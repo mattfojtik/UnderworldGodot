@@ -326,6 +326,7 @@ namespace Underworld
                     combat.EndCombatLoop();
                 }
 
+                VrCombatMotionLog.LogCombatMode(entering: false);
                 InteractionModeToggle(InteractionModes.ModeLook);
                 return;
             }
@@ -338,6 +339,8 @@ namespace Underworld
             {
                 ToggleWeaponAnimationState(true);
             }
+
+            VrCombatMotionLog.LogCombatMode(entering: true);
         }
 
         public static void ToggleWeaponAnimationState(bool drawWeapon, bool updateThemes = true)

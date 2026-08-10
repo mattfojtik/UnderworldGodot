@@ -104,6 +104,7 @@ namespace Underworld
         {
             uimanager.instance.mousecursor.SetCursorToCursor(0);
             PlayerAttackCharge = 0;
+            _vrChargeAnimSwingType = -1;
             if (playerdat.play_drawn == 1)
             {
                 stage = CombatStages.Ready;
@@ -120,8 +121,9 @@ namespace Underworld
         }
 
 
-        /// <summary>
-        /// Processes the various stages of combat
+        static int _vrChargeAnimSwingType = -1;
+
+        /// <summary>Processes the various stages of combat
         /// </summary>
         public static void CombatInputHandler(double delta)
         {
@@ -197,10 +199,6 @@ namespace Underworld
                             {
                                 GetSwingTypeFromMousePos();
                             }
-                            else if (VrCombatMotion.UseVrCombatInput())
-                            {
-                                WeaponSwingTypePlayer = 0;
-                            }
                             else if (KeyboardAttackHeldDown)
                             {
                                    //  (Input.IsKeyPressed(Key.P)) || (Input.IsKeyPressed(Key.Semicolon) || (Input.IsKeyPressed(Key.Period)
@@ -246,6 +244,10 @@ namespace Underworld
                         combatanimationtimer = 0f;
                         uimanager.CombatAnimationStage = uimanager.CombatAnimationStages.ChargingWeapon;
                         stage = CombatStages.Charging;
+                        if (VrCombatMotion.UseVrCombatInput())
+                        {
+                            _vrChargeAnimSwingType = WeaponSwingTypePlayer;
+                        }
                     }
                     else
                     {
@@ -272,6 +274,15 @@ namespace Underworld
                             {
                                 case 1:
                                     //melee or fist
+                                    if (VrCombatMotion.UseVrCombatInput()
+                                        && WeaponSwingTypePlayer != _vrChargeAnimSwingType)
+                                    {
+                                        _vrChargeAnimSwingType = WeaponSwingTypePlayer;
+                                        uimanager.CurrentWeaponFrame = 0;
+                                        uimanager.DrawWeaponAnimation(
+                                            WeaponAnimGroup + WeaponAnimStrikeOffset + WeaponAnimHandednessOffset, 0);
+                                    }
+
                                     if (combatanimationtimer > 0.2f)
                                     {
                                         //advance animation frame.
@@ -420,7 +431,16 @@ namespace Underworld
 
         private static void AttackTarget()
         {
-            //weapon has struck do combat calcs  (if melee)                         
+            if (VrController.IsActive && !uwsettings.instance.vr_mirror)
+            {
+                VrController.SyncCombatAimFromHead();
+                if (uwsettings.instance.vr_debug)
+                {
+                    GD.Print($"[VR combat] strike pitch={playerdat.PlayerCameraPitch_dseg_67d6_33D6} swing={WeaponSwingTypePlayer} height={AttackSwingHeightAdjust}");
+                }
+            }
+
+            //weapon has struck do combat calcs  (if melee)
             uimanager.ResetPower();
             playerdat.PlayerQuietness = 0xF;
             var ChargeAdjust = maxcharge - mincharge;
