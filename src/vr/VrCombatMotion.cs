@@ -15,7 +15,7 @@ namespace Underworld
 		public const float NeckPlaneY = 0.28f;
 
 		/// <summary>Depth plane toward the body. Stab when Z stays behind this (lower Z).</summary>
-		public const float StabPlaneZ = 0.12f;
+		public const float StabPlaneZ = 0.07f;
 
 		/// <summary>Frames hand must stay behind stab plane before stab can charge (lets slash register first).</summary>
 		const int StabChargeDelayFrames = 5;
@@ -259,7 +259,8 @@ namespace Underworld
 
 		public static bool ShouldShowGesturePlanes()
 		{
-			return VrController.IsActive
+			return uwsettings.instance.vr_combat_gesture_planes
+				&& VrController.IsActive
 				&& !uwsettings.instance.vr_mirror
 				&& uimanager.InGame
 				&& uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack;

@@ -106,6 +106,8 @@ public class uwsettings
     public bool vr_debug { get; set; } = true;
     /// <summary>Append VR weapon-hand motion samples to user://vr_combat_motion.log for gesture tuning.</summary>
     public bool vr_combat_motion_log { get; set; } = true;
+    /// <summary>Show torso-local slash/bash/stab planes and weapon-hand marker in combat mode.</summary>
+    public bool vr_combat_gesture_planes { get; set; } = false;
     /// <summary>Overlay shade/cutoff distance debug on the HUD (F11 also toggles). Off by default.</summary>
     public bool vr_light_debug { get; set; } = false;
     /// <summary>

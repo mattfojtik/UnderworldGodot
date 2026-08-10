@@ -83,6 +83,12 @@
             "default": "full"
         },
 
+        "vr_combat_gesture_planes": {
+            "description": "Show torso-local slash/bash/stab planes and weapon-hand marker in VR combat mode.",
+            "type": "boolean",
+            "default": false
+        },
+
         "datafolder": {
             "description": "Save slot used when vr_boot_mode is explore (DATA or SAVE1..SAVE4).",
             "type": "string",

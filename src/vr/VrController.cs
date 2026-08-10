@@ -624,6 +624,11 @@ public static partial class VrController
 
 	public static void TickRuntime(float delta, float motionBlend = 1f)
 	{
+		if (uwsettings.instance.vr && !uwsettings.instance.vr_mirror)
+		{
+			ApplyVrShortcutInput();
+		}
+
 		if (!IsActive)
 		{
 			return;
@@ -707,7 +712,6 @@ public static partial class VrController
 		UpdateHeldObjectVisual();
 		UpdateMessageScrollPanel();
 		UpdateVrStatusPanels();
-		ApplyVrShortcutInput();
 		ApplyDoorInteraction();
 	}
 
@@ -1635,7 +1639,7 @@ public static partial class VrController
 
 	static void ApplyVrShortcutInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror)
+		if (!uwsettings.instance.vr || uwsettings.instance.vr_mirror)
 		{
 			_vrShortcutTriggerWasPressed = false;
 			_vrEscapeWasPressed = false;
@@ -1678,16 +1682,29 @@ public static partial class VrController
 
 	static void ApplyVrEscapeAction()
 	{
+		if (MessageDisplay.WaitingForYesOrNo)
+		{
+			MessageDisplay.ConfirmYesNoResponse(false);
+			GD.Print("[VR] Yes/no declined (left grip = Escape).");
+			return;
+		}
+
+		if (MessageDisplay.WaitingForTypedInput)
+		{
+			MessageDisplay.WaitingForTypedInput = false;
+			uimanager.instance.TypedInput.Text = "";
+			VrOnScreenKeyboard.Hide();
+			GD.Print("[VR] Typed input cancelled (left grip = Escape).");
+			return;
+		}
+
 		switch (uimanager.CurrentGameMode)
 		{
 			case uimanager.GameModes.CUTSCENE:
-				if (cutsplayer.IsPlaying)
-				{
-					cutsplayer.StopCutscene();
-					GD.Print("[VR] Cutscene skip (left grip = Escape).");
-				}
-
+				cutsplayer.StopCutscene();
+				GD.Print("[VR] Cutscene skip (left grip = Escape).");
 				break;
+			case uimanager.GameModes.MAIN:
 			case uimanager.GameModes.CHARGEN:
 			case uimanager.GameModes.JOURNEY:
 				uimanager.instance?.HandleFrontMenuEscape();
