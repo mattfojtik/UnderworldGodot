@@ -187,6 +187,41 @@ namespace Underworld
 
 
 
+        /// <summary>Close the automap overlay and return to gameplay (VR escape, Close button, etc.).</summary>
+        public static void CloseAutomapScreen()
+        {
+            if (!InAutomap)
+            {
+                return;
+            }
+
+            if (CurrentAutomapAction != automapactions.NONE)
+            {
+                return;
+            }
+
+            CurrentAutomapAction = automapactions.NONE;
+            EnableDisable(instance.AutomapPanel, false);
+            CurrentGameMode = GameModes.GAME;
+            if (UWClass._RES != UWClass.GAME_UW2)
+            {
+                if (playerdat.play_drawn == 1)
+                {
+                    XMIMusic.ChangeThemeMusic(XMIMusic.Armed);
+                }
+                else
+                {
+                    XMIMusic.PickLevelThemeMusic(-1);
+                }
+            }
+            else if (playerdat.play_drawn == 1)
+            {
+                XMIMusic.ChangeThemeMusic(XMIMusic.Armed);
+            }
+
+            instance.mousecursor.SetCursorToCursor();
+        }
+
         /// <summary>
         /// Closes the automap window
         /// </summary>
@@ -195,32 +230,7 @@ namespace Underworld
         {
             if (@event is InputEventMouseButton eventMouseButton && eventMouseButton.Pressed && eventMouseButton.ButtonIndex == MouseButton.Left)
             {
-                if (CurrentAutomapAction != automapactions.NONE)
-                {
-                    return;//don't do anything while writing.
-                }
-                CurrentAutomapAction = automapactions.NONE;
-                EnableDisable(AutomapPanel, false);
-                uimanager.CurrentGameMode = GameModes.GAME;
-                if (UWClass._RES != UWClass.GAME_UW2)
-                {
-                    if (playerdat.play_drawn == 1)
-                    {
-                        XMIMusic.ChangeThemeMusic(XMIMusic.Armed);
-                    }
-                    else
-                    {
-                        XMIMusic.PickLevelThemeMusic(-1);
-                    }
-                }
-                else
-                {
-                    if (playerdat.play_drawn == 1)
-                    {
-                        XMIMusic.ChangeThemeMusic(XMIMusic.Armed);
-                    }
-                }
-                uimanager.instance.mousecursor.SetCursorToCursor();
+                CloseAutomapScreen();
             }
         }
 

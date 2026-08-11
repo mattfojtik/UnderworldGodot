@@ -55,20 +55,20 @@ Movement uses head-relative yaw while the stick is active (`TryGetMotionYaw`).
 
 ## Exploration (out of combat)
 
-Aim with the **dominant-hand laser**, then use the verb:
+Aim with the **dominant-hand laser** (cyan) for Get/Use, and the **off-hand laser** (green) for Look/Talk:
 
-| Verb | Binding (righty) | Binding (lefty) | Timing |
-|------|------------------|-----------------|--------|
-| **Get** | Right grip | Left grip | **Press** picks up (world or inventory slot); **release** throws / drops / places in inventory (DOS-aligned) |
-| **Use** | Right trigger | Left trigger | **Release** (DOS-aligned) |
-| **Look** | Left trigger | Right trigger | Press |
-| **Talk** | Left grip | Right grip | Press |
+| Verb | Hand / laser | Binding (righty) | Binding (lefty) | Timing |
+|------|--------------|------------------|-----------------|--------|
+| **Get** | Dominant | Right grip | Left grip | **Press** picks up (world or inventory slot); **release** throws / drops / places in inventory (DOS-aligned) |
+| **Use** | Dominant | Right trigger | Left trigger | **Release** (DOS-aligned) |
+| **Look** | Off-hand | Left trigger | Right trigger | Press |
+| **Talk** | Off-hand | Left grip | Right grip | Press |
 
 **Get** is a hold gesture: keep grip held after grabbing, aim the laser, then release to place on the HUD inventory or throw/drop in the world. There is no second click.
 
 If the player presses Get / Use / Look / Talk while **in combat**, block the action and show feedback (DOS did not allow those modes during attack).
 
-**Cancel / back** (menus, yes/no, typed quantity, cutscenes): **left grip** when a prompt is open (fixed side, all players).
+**Cancel / back** (menus, yes/no, typed quantity, cutscenes, **automap**, **in-game options**): **left grip** when a prompt is open (fixed side, all players).
 
 ## Combat
 

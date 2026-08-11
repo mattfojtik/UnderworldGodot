@@ -7,7 +7,7 @@ description: VR laser picking and HUD interaction in UnderworldGodot. Controller
 
 ## Golden rule
 
-**All world look/pick/use rays come from the right controller laser** (`_rightController.GlobalPosition` + `GetControllerRayDir()`). Do not use head/HMD position or gaze for picking — user explicitly rejected head aim.
+**World Get/Use rays come from the dominant controller laser** (`GetAimRayOrigin` + `GetControllerRayDir`). **Look/Talk rays come from the off-hand** (`GetOffHandRayOrigin` + `GetOffHandRayDir`). A second green laser shows the off-hand aim during exploration. Do not use head/HMD position or gaze for picking — user explicitly rejected head aim.
 
 ```csharp
 var rayOrigin = _rightController.GlobalPosition;

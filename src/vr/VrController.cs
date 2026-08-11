@@ -60,6 +60,8 @@ public static partial class VrController
 	static Node3D _pointerLaserWorldParent;
 	static bool _pointerLaserOnCamera;
 	static bool _pointerLaserOnController;
+	static MeshInstance3D _offHandPointerLaser;
+	static CylinderMesh _offHandPointerLaserMesh;
 	static bool _introDiagLastLaserVisible;
 	static bool _hudPanelVisible = true;
 	static bool _headOverlaysVisible = true;
@@ -780,6 +782,7 @@ public static partial class VrController
 		}
 
 		UpdateVrGameplayPointerLaser();
+		UpdateVrOffHandPointerLaser();
 		if (VrNumberPad.IsVisible && NeedsFrontMenuLaser())
 		{
 			EnsureFrontMenuLaserDrawn();
@@ -935,8 +938,7 @@ public static partial class VrController
 	static bool NeedsFrontMenuLaser() =>
 		IsHudOnMenuScreen()
 		|| uimanager.AtMainMenu
-		|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE
-		|| uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS;
+		|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE;
 
 	static void HookProcessFrame()
 	{
@@ -1968,6 +1970,22 @@ public static partial class VrController
 			return;
 		}
 
+		if (uimanager.InAutomap)
+		{
+			if (uimanager.CurrentAutomapAction == uimanager.automapactions.WRITING)
+			{
+				uimanager.StopWritingAutomapNote(cancelled: true);
+				VrDiagLog.Print("[VR] Automap note cancelled (left grip = Escape).");
+			}
+			else
+			{
+				uimanager.CloseAutomapScreen();
+				VrDiagLog.Print("[VR] Automap closed (left grip = Escape).");
+			}
+
+			return;
+		}
+
 		switch (uimanager.CurrentGameMode)
 		{
 			case uimanager.GameModes.CUTSCENE:
@@ -1979,6 +1997,10 @@ public static partial class VrController
 			case uimanager.GameModes.JOURNEY:
 				uimanager.instance?.HandleFrontMenuEscape();
 				VrDiagLog.Print("[VR] Front menu back (left grip = Escape).");
+				break;
+			case uimanager.GameModes.OPTIONS:
+				uimanager.ReturnToGameFromOptions();
+				VrDiagLog.Print("[VR] Options closed (left grip = Escape).");
 				break;
 			case uimanager.GameModes.GAME:
 				if (cutsplayer.IsPlaying)
@@ -2085,7 +2107,9 @@ public static partial class VrController
 	}
 
 	static bool ShouldShowVrPointerLaser() =>
-		_hudPanelVisible || _headOverlaysVisible || IsHudOnMenuScreen() || uimanager.AtMainMenu;
+		_hudPanelVisible || _headOverlaysVisible || IsHudOnMenuScreen() || uimanager.AtMainMenu
+		|| uimanager.InAutomap
+		|| uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS;
 
 	static bool HudPointerOwnsLaser() =>
 		VrNumberPad.IsVisible
@@ -2206,6 +2230,76 @@ public static partial class VrController
 		_pointerLaserOnCamera = false;
 		_pointerLaserOnController = false;
 		underworld.AddChild(_pointerLaser);
+	}
+
+	static void EnsureOffHandPointerLaser(Node3D underworld)
+	{
+		if (_offHandPointerLaser != null || underworld == null)
+		{
+			return;
+		}
+
+		var laserMat = new StandardMaterial3D
+		{
+			AlbedoColor = new Color(0.55f, 1f, 0.45f, 0.85f),
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			DisableReceiveShadows = true,
+			NoDepthTest = true,
+		};
+
+		_offHandPointerLaserMesh = new CylinderMesh
+		{
+			TopRadius = PointerLaserRadius,
+			BottomRadius = PointerLaserRadius,
+			Height = 1f,
+			Material = laserMat,
+		};
+
+		_offHandPointerLaser = new MeshInstance3D
+		{
+			Name = "VrOffHandPointerLaser",
+			Mesh = _offHandPointerLaserMesh,
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			Layers = main.LayerGeo | main.LayerXFER,
+			Visible = false,
+			TopLevel = true,
+		};
+		underworld.AddChild(_offHandPointerLaser);
+	}
+
+	static void UpdateOffHandPointerLaser(Vector3 from, Vector3 to, bool visible)
+	{
+		var underworld = GetUnderworldNode();
+		if (underworld != null)
+		{
+			EnsureOffHandPointerLaser(underworld);
+		}
+
+		if (_offHandPointerLaser == null || _offHandPointerLaserMesh == null)
+		{
+			return;
+		}
+
+		_offHandPointerLaser.Visible = visible;
+		if (!visible)
+		{
+			return;
+		}
+
+		var delta = to - from;
+		var length = delta.Length();
+		if (length < 0.005f)
+		{
+			_offHandPointerLaser.Visible = false;
+			return;
+		}
+
+		var direction = delta / length;
+		_offHandPointerLaserMesh.Height = length;
+		_offHandPointerLaser.GlobalPosition = from + direction * (length * 0.5f);
+		_offHandPointerLaser.GlobalBasis = BasisWithYAxis(direction);
 	}
 
 	static void ReparentPointerLaserTo(Node3D parent, bool onCamera, float radius)
@@ -2878,6 +2972,14 @@ public static partial class VrController
 		return controller?.GlobalPosition ?? GetAvatarBodyCenter();
 	}
 
+	static Vector3 GetOffHandRayOrigin()
+	{
+		var controller = GetOffHandController();
+		return controller?.GlobalPosition ?? GetAvatarBodyCenter();
+	}
+
+	static Vector3 GetOffHandRayDir() => GetRayDirFromController(GetOffHandController());
+
 	static bool IsVrInCombat() =>
 		uimanager.InGame
 		&& uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack
@@ -3527,10 +3629,12 @@ public static partial class VrController
 			}
 		}
 
+		var offRayOrigin = GetOffHandRayOrigin();
+		var offRayDir = GetOffHandRayDir();
 		TryVerbButtonEdge(offHand, HudLeftClickActions, ref _offHandTriggerWasPressed,
-			uimanager.InteractionModes.ModeLook, rayOrigin, rayDir);
+			uimanager.InteractionModes.ModeLook, offRayOrigin, offRayDir);
 		TryVerbButtonEdge(offHand, HudRightClickActions, ref _offHandGripWasPressed,
-			uimanager.InteractionModes.ModeTalk, rayOrigin, rayDir);
+			uimanager.InteractionModes.ModeTalk, offRayOrigin, offRayDir);
 	}
 
 	/// <summary>
@@ -3991,6 +4095,38 @@ public static partial class VrController
 		}
 
 		UpdateGameplayPointerLaser(rayOrigin, rayDir);
+	}
+
+	/// <summary>Off-hand laser for Look/Talk — separate beam from the dominant Get/Use ray.</summary>
+	static void UpdateVrOffHandPointerLaser()
+	{
+		if (HudPointerOwnsLaser() || VrNumberPad.IsVisible || NeedsFrontMenuLaser())
+		{
+			UpdateOffHandPointerLaser(Vector3.Zero, Vector3.Zero, visible: false);
+			return;
+		}
+
+		var offHand = GetOffHandController();
+		if (offHand == null)
+		{
+			UpdateOffHandPointerLaser(Vector3.Zero, Vector3.Zero, visible: false);
+			return;
+		}
+
+		if (!ShouldShowVrGameplayPointerLaser()
+			|| !uimanager.InGame
+			|| uimanager.blockinput
+			|| IsHudOnMenuScreen()
+			|| SpellCasting.currentSpell != null)
+		{
+			UpdateOffHandPointerLaser(Vector3.Zero, Vector3.Zero, visible: false);
+			return;
+		}
+
+		var rayOrigin = GetOffHandRayOrigin();
+		var rayDir = GetOffHandRayDir();
+		var laserT = GetMaxReachAlongRay(rayOrigin, rayDir, GetInteractRayDistance(uimanager.InteractionModes.ModeLook));
+		UpdateOffHandPointerLaser(rayOrigin, rayOrigin + rayDir * laserT, visible: true);
 	}
 
 	static void TryThrowHeldObject(Vector3 rayOrigin, Vector3 rayDir)
@@ -4647,6 +4783,14 @@ public static partial class VrController
 		if (needsMenuTv)
 		{
 			TryEnsureMenuTvScreen();
+		}
+
+		// In-game options/automap stay on the hand HUD — never promote to menu TV.
+		if (_vrUiOnMenuTv
+			&& !uimanager.AtMainMenu
+			&& (uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS || uimanager.InAutomap))
+		{
+			TransitionMenuTvToHandHud();
 		}
 
 		var menuScreen = IsHudOnMenuScreen() || (NeedsFrontMenuLaser() && _hudPanel != null);
