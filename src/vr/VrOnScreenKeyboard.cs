@@ -1,21 +1,35 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 
 namespace Underworld;
 
 /// <summary>
-/// Simple on-screen keyboard for VR character-name entry (laser-pointer friendly).
+/// Simple on-screen keyboard for VR text entry (chargen names, automap notes).
 /// </summary>
 public static class VrOnScreenKeyboard
 {
 	static Control _root;
 	static bool _shiftActive;
 	static Button _shiftButton;
+	static Action<string> _appendChar;
+	static Action _backspace;
+	static Action _submit;
 	static readonly List<(Button Button, char Lower, char Upper)> _letterKeys = new();
 
 	public static bool IsVisible => _root != null && GodotObject.IsInstanceValid(_root);
 
 	public static void Show(CanvasLayer parent)
+	{
+		Show(parent, chargen.AppendNameChar, chargen.BackspaceNameChar, chargen.SubmitNameInput);
+	}
+
+	public static void ShowForAutomapNote(CanvasLayer parent)
+	{
+		Show(parent, uimanager.AppendAutomapNoteChar, uimanager.BackspaceAutomapNoteChar, uimanager.SubmitAutomapNote);
+	}
+
+	static void Show(CanvasLayer parent, Action<string> appendChar, Action backspace, Action submit)
 	{
 		if (!VrController.IsActive || !uwsettings.instance.VrBootFull || parent == null)
 		{
@@ -24,6 +38,9 @@ public static class VrOnScreenKeyboard
 
 		Hide();
 
+		_appendChar = appendChar;
+		_backspace = backspace;
+		_submit = submit;
 		_shiftActive = false;
 		_letterKeys.Clear();
 
@@ -31,6 +48,7 @@ public static class VrOnScreenKeyboard
 		{
 			Name = "VrOnScreenKeyboard",
 			MouseFilter = Control.MouseFilterEnum.Stop,
+			ZIndex = 4096,
 		};
 		_root.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
 		_root.OffsetTop = -460f;
@@ -51,8 +69,39 @@ public static class VrOnScreenKeyboard
 		AddKeyRow(layout, "asdfghjkl");
 		AddKeyRow(layout, "zxcvbnm");
 		AddActionRow(layout);
-		parent.AddChild(_root);
+		GetKeyboardHost(parent).AddChild(_root);
+		_root.MoveToFront();
 		RefreshLetterLabels();
+	}
+
+	/// <summary>
+	/// Chargen uses its own layer; gameplay overlays need a layer above Common/automap.
+	/// </summary>
+	static CanvasLayer GetKeyboardHost(CanvasLayer parent)
+	{
+		if (parent.Name == "Chargen")
+		{
+			return parent;
+		}
+
+		var uiRoot = parent.Name == "UI"
+			? parent
+			: parent.GetParent()?.GetNodeOrNull<CanvasLayer>("UI")
+				?? parent;
+
+		var overlay = uiRoot.GetNodeOrNull<CanvasLayer>("VrKeyboardOverlay");
+		if (overlay != null)
+		{
+			return overlay;
+		}
+
+		overlay = new CanvasLayer
+		{
+			Name = "VrKeyboardOverlay",
+			Layer = 120,
+		};
+		uiRoot.AddChild(overlay);
+		return overlay;
 	}
 
 	public static void Hide()
@@ -65,6 +114,9 @@ public static class VrOnScreenKeyboard
 		_root = null;
 		_shiftActive = false;
 		_shiftButton = null;
+		_appendChar = null;
+		_backspace = null;
+		_submit = null;
 		_letterKeys.Clear();
 	}
 
@@ -83,9 +135,9 @@ public static class VrOnScreenKeyboard
 		var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
 		parent.AddChild(row);
 		row.AddChild(MakeShiftButton());
-		row.AddChild(MakeActionButton("Space", () => chargen.AppendNameChar(" "), 280f));
-		row.AddChild(MakeActionButton("Back", chargen.BackspaceNameChar, 200f));
-		row.AddChild(MakeActionButton("Done", chargen.SubmitNameInput, 240f));
+		row.AddChild(MakeActionButton("Space", () => _appendChar?.Invoke(" "), 280f));
+		row.AddChild(MakeActionButton("Back", () => _backspace?.Invoke(), 200f));
+		row.AddChild(MakeActionButton("Done", () => _submit?.Invoke(), 240f));
 	}
 
 	static Button MakeShiftButton()
@@ -152,12 +204,12 @@ public static class VrOnScreenKeyboard
 		{
 			FlashKeyPressed(button);
 			var ch = _shiftActive ? upper : lower;
-			chargen.AppendNameChar(ch.ToString());
+			_appendChar?.Invoke(ch.ToString());
 		};
 		return button;
 	}
 
-	static Button MakeActionButton(string label, System.Action action, float width)
+	static Button MakeActionButton(string label, Action action, float width)
 	{
 		var button = new Button
 		{
@@ -169,7 +221,7 @@ public static class VrOnScreenKeyboard
 		button.Pressed += () =>
 		{
 			FlashKeyPressed(button);
-			action();
+			action?.Invoke();
 		};
 		return button;
 	}

@@ -1225,6 +1225,12 @@ public static partial class VrController
 			return;
 		}
 
+		if (uimanager.InAutomap || uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS)
+		{
+			ClearStatusOverlayPointerState();
+			return;
+		}
+
 		if (_hudPointerHovering && !_statusOverlayHovering)
 		{
 			ClearStatusOverlayPointerState();

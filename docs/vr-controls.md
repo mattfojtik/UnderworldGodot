@@ -70,6 +70,8 @@ If the player presses Get / Use / Look / Talk while **in combat**, block the act
 
 **Cancel / back** (menus, yes/no, typed quantity, cutscenes, **automap**, **in-game options**): **left grip** when a prompt is open (fixed side, all players).
 
+**Automap:** dominant cyan laser tracks the hand HUD; **trigger** clicks map controls. Click the map to start a note — an on-screen keyboard appears at the bottom of the HUD. **Done** saves the note; **left grip** cancels writing or closes the map.
+
 ## Combat
 
 ### Toggle

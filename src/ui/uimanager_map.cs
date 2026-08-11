@@ -349,6 +349,46 @@ namespace Underworld
             }
         }
 
+        public static void AppendAutomapNoteChar(string inputed)
+        {
+            if (CurrentAutomapAction != automapactions.WRITING || currentmapnote == null || string.IsNullOrEmpty(inputed))
+            {
+                return;
+            }
+
+            var text = currentmapnote.notetext;
+            if (text.Length < 0x30)
+            {
+                text += inputed;
+                currentmapnote.notetext = text;
+                currentmapnote.textlabel.Text = $"[color=#331C13]{text}[/color]";
+            }
+        }
+
+        public static void BackspaceAutomapNoteChar()
+        {
+            if (CurrentAutomapAction != automapactions.WRITING || currentmapnote == null)
+            {
+                return;
+            }
+
+            var text = currentmapnote.notetext;
+            if (text.Length > 0)
+            {
+                text = text.Remove(text.Length - 1);
+                currentmapnote.notetext = text;
+                currentmapnote.textlabel.Text = $"[color=#331C13]{text}[/color]";
+            }
+        }
+
+        public static void SubmitAutomapNote()
+        {
+            if (CurrentAutomapAction == automapactions.WRITING)
+            {
+                StopWritingAutomapNote(cancelled: false);
+            }
+        }
+
 
 
     }//end class

@@ -86,6 +86,7 @@ public static partial class VrController
 	static bool _numberPadLeftWasPressed;
 	static Vector2 _lastNumberPadPointerPos = new(-1f, -1f);
 	static bool _combatToggleWasPressed;
+	static bool _automapKeyboardWasWriting;
 	static float _pendingPickupRayDistance;
 	static int _vrHeldObjectIndex = -1;
 	static float _vrHeldRayDistance = 1f;
@@ -779,6 +780,7 @@ public static partial class VrController
 			UpdateHeldObjectVisual();
 			UpdateMessageScrollPanel();
 			UpdateVrStatusPanels();
+			UpdateAutomapVrKeyboard();
 		}
 
 		UpdateVrGameplayPointerLaser();
@@ -1983,6 +1985,8 @@ public static partial class VrController
 				VrDiagLog.Print("[VR] Automap closed (left grip = Escape).");
 			}
 
+			VrOnScreenKeyboard.Hide();
+			_automapKeyboardWasWriting = false;
 			return;
 		}
 
@@ -4765,6 +4769,35 @@ public static partial class VrController
 			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE;
 	}
 
+	static bool IsAutomapHudPointerMode() =>
+		uimanager.InAutomap || uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS;
+
+	static void UpdateAutomapVrKeyboard()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror)
+		{
+			_automapKeyboardWasWriting = false;
+			return;
+		}
+
+		var writing = uimanager.InAutomap
+			&& uimanager.CurrentAutomapAction == uimanager.automapactions.WRITING;
+		if (writing && !_automapKeyboardWasWriting)
+		{
+			var ui = GetVrUiCanvasLayer(_gameRoot?.GetParent<Node3D>());
+			if (ui != null)
+			{
+				VrOnScreenKeyboard.ShowForAutomapNote(ui);
+			}
+		}
+		else if (!writing && _automapKeyboardWasWriting)
+		{
+			VrOnScreenKeyboard.Hide();
+		}
+
+		_automapKeyboardWasWriting = writing;
+	}
+
 	static void ApplyHudPointerInput()
 	{
 		IsHud3DViewportHovering = false;
@@ -4839,12 +4872,21 @@ public static partial class VrController
 			return;
 		}
 
-		if (_headOverlaysVisible && _statusOverlayHovering)
+		if (_headOverlaysVisible && _statusOverlayHovering && !IsAutomapHudPointerMode())
 		{
 			_hudPointerHovering = false;
 			_hudPointerLeftWasPressed = false;
 			_hudPointerRightWasPressed = false;
 			return;
+		}
+
+		if (IsAutomapHudPointerMode())
+		{
+			ClearStatusOverlayPointerState();
+			if (!_hudPanelVisible)
+			{
+				SetHudPanelVisible(true);
+			}
 		}
 
 		if (menuPointer == null)
@@ -4883,7 +4925,7 @@ public static partial class VrController
 
 		if (menuOnly && !hovering)
 		{
-			var laserDistance = 0.2f;
+			var laserDistance = IsAutomapHudPointerMode() ? HudPointerMaxDistance : 0.2f;
 			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * laserDistance, visible: true);
 
 			_hudPointerHovering = false;
@@ -4896,7 +4938,10 @@ public static partial class VrController
 			}
 
 			uimanager.CursorOverMessageScroll = false;
-			return;
+			if (!IsAutomapHudPointerMode())
+			{
+				return;
+			}
 		}
 
 		if (hovering)
