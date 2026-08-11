@@ -55,14 +55,16 @@ Movement uses head-relative yaw while the stick is active (`TryGetMotionYaw`).
 
 ## Exploration (out of combat)
 
-Aim with the **dominant-hand laser**, then press the verb:
+Aim with the **dominant-hand laser**, then use the verb:
 
-| Verb | Binding (righty) | Binding (lefty) |
-|------|------------------|-----------------|
-| **Get** (pick up) | Right grip | Left grip |
-| **Use** (doors, levers, use-on-target) | Right trigger | Left trigger |
-| **Look** (examine tile/object) | Left trigger | Right trigger |
-| **Talk** (NPC / conversation) | Left grip | Right grip |
+| Verb | Binding (righty) | Binding (lefty) | Timing |
+|------|------------------|-----------------|--------|
+| **Get** | Right grip | Left grip | **Press** picks up (world or inventory slot); **release** throws / drops / places in inventory (DOS-aligned) |
+| **Use** | Right trigger | Left trigger | **Release** (DOS-aligned) |
+| **Look** | Left trigger | Right trigger | Press |
+| **Talk** | Left grip | Right grip | Press |
+
+**Get** is a hold gesture: keep grip held after grabbing, aim the laser, then release to place on the HUD inventory or throw/drop in the world. There is no second click.
 
 If the player presses Get / Use / Look / Talk while **in combat**, block the action and show feedback (DOS did not allow those modes during attack).
 
@@ -137,7 +139,10 @@ F-keys in `main.cs` are dev/debug shortcuts only; VR does not replicate them.
 |-------|--------|
 | Left menu | Hand HUD (1280×800 panel on off-hand controller) |
 | Left Y | Head-locked status overlays (message scroll, flasks, gem, inventory strip, …) |
-| Right trigger / grip (while pointing at HUD) | UI mouse left / right click |
+| Dominant trigger (while pointing at inventory) | **Use** on **release** (always ModeUse) |
+| Dominant trigger (other HUD chrome) | UI mouse left click on press |
+| Off-hand grip (while pointing at HUD) | UI mouse right click |
+| Dominant grip | **Get only** — press pick / release place when holding (not a generic HUD click) |
 
 During quantity prompts (“Move how many?”), a **head-locked number pad** appears; laser + trigger to press keys; left grip cancels.
 
@@ -150,7 +155,7 @@ During quantity prompts (“Move how many?”), a **head-locked number pad** app
 ## Implementation checklist
 
 - [x] B = combat toggle; remove right-grip combat toggle
-- [x] Dominant/off-hand grip/trigger verbs (exploration)
+- [x] Dominant/off-hand grip/trigger verbs (exploration); Get = grip press/release
 - [x] Block Get/Use/Look/Talk in combat
 - [x] VR melee: `VrCombatMotion` only (no grip charge)
 - [x] Spell targeting: dominant trigger/grip when `currentSpell != null`
@@ -164,6 +169,7 @@ During quantity prompts (“Move how many?”), a **head-locked number pad** app
 
 ## Related docs
 
+- [vr-interaction-parity.md](vr-interaction-parity.md) — DOS vs Hank flat UI semantics; keep VR robust when flat UI aligns to DOS
 - [vr-open-issues.md](vr-open-issues.md) — open VR bugs and polish
 - `.cursor/skills/underworld-vr-native/SKILL.md` — architecture and locomotion interpolation
 - `.cursor/skills/underworld-vr-interaction/SKILL.md` — laser pick pipeline

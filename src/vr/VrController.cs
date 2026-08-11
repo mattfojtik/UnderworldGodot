@@ -802,7 +802,10 @@ public static partial class VrController
 		rayDir = GetControllerRayDir();
 	}
 
-	/// <summary>Menu TV: trigger only. In-game HUD/inventory: dominant trigger or grip.</summary>
+	/// <summary>
+	/// Menu TV: trigger only. In-game HUD: dominant trigger only.
+	/// Dominant grip is Get (press pick / release place) — not a generic HUD left click.
+	/// </summary>
 	static bool IsHudPointerLeftClickHeld(bool menuScreen)
 	{
 		if (menuScreen)
@@ -812,9 +815,7 @@ public static partial class VrController
 		}
 
 		var dominant = GetDominantController();
-		return dominant != null
-			&& (IsButtonPressed(dominant, HudLeftClickActions)
-				|| IsButtonPressed(dominant, HudRightClickActions));
+		return dominant != null && IsButtonPressed(dominant, HudLeftClickActions);
 	}
 
 	/// <summary>Menu TV: grip on menu pointer. In-game HUD: off-hand grip (Talk hand).</summary>
@@ -3490,20 +3491,27 @@ public static partial class VrController
 			return;
 		}
 
-		if ((_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering)
+		var rayOrigin = GetAimRayOrigin();
+		var rayDir = GetControllerRayDir();
+		var hudHovering = (_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering;
+
+		// Get: grip press pick / release place. Use: trigger release (DOS-aligned).
+		ApplyDominantGetGripInput(dominant, rayOrigin, rayDir, hudHovering);
+		ApplyDominantUseTriggerInput(dominant, rayOrigin, rayDir, hudHovering);
+
+		if (hudHovering)
 		{
-			ResetExplorationVerbPressState();
+			// Absorb Look/Talk edges while the laser is on UI; Get/Use own their dominant state.
+			_offHandGripWasPressed = IsButtonPressed(offHand, HudRightClickActions);
+			_offHandTriggerWasPressed = IsButtonPressed(offHand, HudLeftClickActions);
 			return;
 		}
 
-		var rayOrigin = GetAimRayOrigin();
-		var rayDir = GetControllerRayDir();
 		IsVrWorldPointerActive = true;
 		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
 
 		if (playerdat.ObjectInHand != -1)
 		{
-			ApplyHeldObjectVerbInput(dominant, rayOrigin, rayDir);
 			_offHandGripWasPressed = IsButtonPressed(offHand, HudRightClickActions);
 			_offHandTriggerWasPressed = IsButtonPressed(offHand, HudLeftClickActions);
 			return;
@@ -3513,50 +3521,138 @@ public static partial class VrController
 		{
 			if (TryConsumeCombatBlockedVerbPress(dominant, offHand))
 			{
-				ResetExplorationVerbPressState();
+				_offHandGripWasPressed = IsButtonPressed(offHand, HudRightClickActions);
+				_offHandTriggerWasPressed = IsButtonPressed(offHand, HudLeftClickActions);
 				return;
 			}
 		}
 
-		TryVerbButtonEdge(dominant, HudRightClickActions, ref _dominantGripWasPressed,
-			uimanager.InteractionModes.ModePickup, rayOrigin, rayDir);
-		TryVerbButtonEdge(dominant, HudLeftClickActions, ref _dominantTriggerWasPressed,
-			uimanager.InteractionModes.ModeUse, rayOrigin, rayDir);
 		TryVerbButtonEdge(offHand, HudLeftClickActions, ref _offHandTriggerWasPressed,
 			uimanager.InteractionModes.ModeLook, rayOrigin, rayDir);
 		TryVerbButtonEdge(offHand, HudRightClickActions, ref _offHandGripWasPressed,
 			uimanager.InteractionModes.ModeTalk, rayOrigin, rayDir);
 	}
 
-	static void ApplyHeldObjectVerbInput(XRController3D dominant, Vector3 rayOrigin, Vector3 rayDir)
+	/// <summary>
+	/// Dominant grip = Get. Press: pick up from world or inventory. Release: place on HUD or throw/drop.
+	/// </summary>
+	static void ApplyDominantGetGripInput(
+		XRController3D dominant,
+		Vector3 rayOrigin,
+		Vector3 rayDir,
+		bool hudHovering)
 	{
 		var gripPressed = IsButtonPressed(dominant, HudRightClickActions);
+		var gripReleased = !gripPressed && _dominantGripWasPressed;
+
 		if (gripPressed && !_dominantGripWasPressed)
 		{
-			TryThrowHeldObject(rayOrigin, rayDir);
+			if (!IsVrInCombat() && playerdat.ObjectInHand == -1)
+			{
+				if (hudHovering)
+				{
+					TryPickupObjectFromHud();
+				}
+				else
+				{
+					TryInteractLaserVerb(rayOrigin, rayDir, uimanager.InteractionModes.ModePickup);
+				}
+			}
+		}
+		else if (gripReleased && playerdat.ObjectInHand != -1)
+		{
+			TryReleaseHeldGetObject(rayOrigin, rayDir, hudHovering);
 		}
 
 		_dominantGripWasPressed = gripPressed;
+	}
 
-		var triggerPressed = IsButtonPressed(dominant, HudLeftClickActions);
-		if (triggerPressed && !_dominantTriggerWasPressed)
+	/// <summary>Grip release while holding: inventory/HUD place if laser on UI, else world throw/drop.</summary>
+	static void TryReleaseHeldGetObject(Vector3 rayOrigin, Vector3 rayDir, bool hudHovering)
+	{
+		if (hudHovering)
 		{
-			TryInteractLaserVerb(rayOrigin, rayDir, uimanager.InteractionModes.ModeUse);
+			TryGetClickOnHud();
+			return;
+		}
+
+		TryThrowHeldObject(rayOrigin, rayDir);
+	}
+
+	static void TryPickupObjectFromHud() => TryGetClickOnHud();
+
+	/// <summary>
+	/// Dominant trigger = Use. Fires on <b>release</b> (DOS-aligned), world or inventory.
+	/// </summary>
+	static void ApplyDominantUseTriggerInput(
+		XRController3D dominant,
+		Vector3 rayOrigin,
+		Vector3 rayDir,
+		bool hudHovering)
+	{
+		var triggerPressed = IsButtonPressed(dominant, HudLeftClickActions);
+		var triggerReleased = !triggerPressed && _dominantTriggerWasPressed;
+
+		if (triggerReleased && !IsVrInCombat())
+		{
+			if (hudHovering)
+			{
+				TryUseClickOnHud();
+			}
+			else
+			{
+				TryInteractLaserVerb(rayOrigin, rayDir, uimanager.InteractionModes.ModeUse);
+			}
 		}
 
 		_dominantTriggerWasPressed = triggerPressed;
 	}
 
+	/// <summary>
+	/// Use on inventory HUD only (other HUD chrome still uses press-to-click).
+	/// </summary>
+	static void TryUseClickOnHud()
+	{
+		if (_statusOverlayHovering
+			&& _statusOverlayHoverKind == VrStatusWidgetKind.Inventory
+			&& _lastStatusOverlayHudPos.X >= 0f)
+		{
+			PushVrHudUseClick(_lastStatusOverlayHudPos);
+			return;
+		}
+
+		if (_hudPointerHovering
+			&& _lastHudPointerPos.X >= 0f
+			&& GetInventoryHudRectFixed().HasPoint(_lastHudPointerPos))
+		{
+			PushVrHudUseClick(_lastHudPointerPos);
+		}
+	}
+
+	/// <summary>
+	/// Get verb on HUD: ModePickup left-click at the laser UV (pick from slot or place into slot).
+	/// </summary>
+	static void TryGetClickOnHud()
+	{
+		if (_statusOverlayHovering && _lastStatusOverlayHudPos.X >= 0f)
+		{
+			PushVrHudGetClick(_lastStatusOverlayHudPos);
+			return;
+		}
+
+		if (_hudPointerHovering && _lastHudPointerPos.X >= 0f)
+		{
+			PushVrHudGetClick(_lastHudPointerPos);
+		}
+	}
+
 	static bool TryConsumeCombatBlockedVerbPress(XRController3D dominant, XRController3D offHand)
 	{
+		// Dominant grip/trigger are owned by Get/Use handlers — do not overwrite their edge state.
 		var anyPressed =
-			(IsButtonPressed(dominant, HudRightClickActions) && !_dominantGripWasPressed)
-			|| (IsButtonPressed(dominant, HudLeftClickActions) && !_dominantTriggerWasPressed)
-			|| (IsButtonPressed(offHand, HudLeftClickActions) && !_offHandTriggerWasPressed)
+			(IsButtonPressed(offHand, HudLeftClickActions) && !_offHandTriggerWasPressed)
 			|| (IsButtonPressed(offHand, HudRightClickActions) && !_offHandGripWasPressed);
 
-		_dominantGripWasPressed = IsButtonPressed(dominant, HudRightClickActions);
-		_dominantTriggerWasPressed = IsButtonPressed(dominant, HudLeftClickActions);
 		_offHandTriggerWasPressed = IsButtonPressed(offHand, HudLeftClickActions);
 		_offHandGripWasPressed = IsButtonPressed(offHand, HudRightClickActions);
 		return anyPressed;
@@ -4745,7 +4841,11 @@ public static partial class VrController
 				&& !TryConfirmYesNoPrompt(viewportPos, yes: true)
 				&& !TrySelectConversationOption(viewportPos))
 			{
-				PushVrHudMouseClick(viewportPos, MouseButton.Left);
+				// Inventory Use is trigger-release via ApplyDominantUseTriggerInput (DOS-aligned).
+				if (menuScreen || !GetInventoryHudRectFixed().HasPoint(viewportPos))
+				{
+					PushVrHudMouseClick(viewportPos, MouseButton.Left);
+				}
 			}
 		}
 		_hudPointerLeftWasPressed = leftPressed;
@@ -4994,23 +5094,42 @@ public static partial class VrController
 	}
 
 	/// <summary>
-	/// VR HUD click: DOS empty-slot placement only runs in ModePickup, but VR verbs do not toggle HUD modes.
+	/// HUD left click from dominant trigger: always Use on inventory (ignore sticky Get/Look modes).
+	/// Placement into slots is Get grip-release only.
 	/// </summary>
 	static void PushVrHudMouseClick(Vector2 viewportPos, MouseButton button)
 	{
 		if (uwsettings.instance.vr
 			&& button == MouseButton.Left
-			&& playerdat.ObjectInHand != -1
 			&& GetInventoryHudRectFixed().HasPoint(viewportPos))
 		{
-			var previous = uimanager.InteractionMode;
-			uimanager.InteractionMode = uimanager.InteractionModes.ModePickup;
-			PushHudMouseClick(viewportPos, button);
-			uimanager.InteractionMode = previous;
+			PushVrHudUseClick(viewportPos);
 			return;
 		}
 
 		PushHudMouseClick(viewportPos, button);
+	}
+
+	/// <summary>
+	/// Use on inventory UI: left click under ModeUse (does not follow Hank sticky Get/Look mode).
+	/// </summary>
+	static void PushVrHudUseClick(Vector2 viewportPos)
+	{
+		var previous = uimanager.InteractionMode;
+		uimanager.InteractionMode = uimanager.InteractionModes.ModeUse;
+		PushHudMouseClick(viewportPos, MouseButton.Left);
+		uimanager.InteractionMode = previous;
+	}
+
+	/// <summary>
+	/// Get on inventory UI: left click under ModePickup (pick from occupied slot or place into empty).
+	/// </summary>
+	static void PushVrHudGetClick(Vector2 viewportPos)
+	{
+		var previous = uimanager.InteractionMode;
+		uimanager.InteractionMode = uimanager.InteractionModes.ModePickup;
+		PushHudMouseClick(viewportPos, MouseButton.Left);
+		uimanager.InteractionMode = previous;
 	}
 
 	static void PushHudMouseButton(Vector2 viewportPos, MouseButton button, bool pressed)

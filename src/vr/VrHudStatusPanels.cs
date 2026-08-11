@@ -1279,7 +1279,11 @@ public static partial class VrController
 				&& !TryConfirmYesNoPrompt(hudPos, yes: true)
 				&& !TrySelectConversationOption(hudPos))
 			{
-				PushVrHudMouseClick(hudPos, MouseButton.Left);
+				// Inventory Use is trigger-release via ApplyDominantUseTriggerInput.
+				if (widget.Kind != VrStatusWidgetKind.Inventory)
+				{
+					PushVrHudMouseClick(hudPos, MouseButton.Left);
+				}
 			}
 		}
 		_statusOverlayLeftWasPressed = leftPressed;

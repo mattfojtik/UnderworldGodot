@@ -32,8 +32,9 @@ Look mode with hit beyond vision → `IsWithinLookRange` → "you see nothing".
 
 - Ray: `TryGetHudPanelHit` from **dominant aim hand** in-game (`GetAimRayOrigin` / `GetControllerRayDir`); intro/menu TV still uses right-hand menu pointer.
 - Clicks: `PushHudMouseMotion` / `PushHudMouseClick`
-- **In-game left click** (inventory slots, menus on hand HUD): dominant **trigger or grip** while hovering the panel.
-- **Head status inventory** (Y overlays): same bindings; clicks forward to the real HUD via `PushVrHudMouseClick`, which temporarily sets `ModePickup` when placing a held object (VR verbs do not toggle HUD interaction mode).
+- **In-game inventory Use**: dominant **trigger release** → always **Use** (`PushVrHudUseClick` / ModeUse).
+- **World Use**: same trigger **release** (`ApplyDominantUseTriggerInput`).
+- **Get (inventory)**: grip **press** on a slot = pick (`PushVrHudGetClick`); grip **release** = place.
 - **In-game right click**: off-hand grip while hovering.
 - Intro/menu TV: right trigger = left click, right grip = right click (unchanged).
 - 3D viewport hole: `TryMapToUwViewport` → `TriggerViewPortClick` (legacy flat path)
@@ -85,5 +86,6 @@ Look mode with hit beyond vision → `IsWithinLookRange` → "you see nothing".
 
 ## See also
 
+- [../../../docs/vr-interaction-parity.md](../../../docs/vr-interaction-parity.md) — DOS vs Hank flat UI; VR should target DOS semantics
 - [../underworld-vr-native/SKILL.md](../underworld-vr-native/SKILL.md)
 - [../underworld-vr-native/open-issues.md](../underworld-vr-native/open-issues.md)
