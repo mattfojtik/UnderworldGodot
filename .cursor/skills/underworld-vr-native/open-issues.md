@@ -1,14 +1,8 @@
 # VR Open Issues (UnderworldGodot)
 
-Last updated from native VR work through conversation fixes (commit `3289f01` on `main`).
+Last updated Aug 2026 (through commit `b640b53` on `main`).
 
 ## High priority
-
-### Movement jitter when running forward
-- **Symptom:** Regular forward run (e.g. game start) feels jaggy; occasional small backward hitch. Worse in initial spawn-facing direction than opposite.
-- **Likely cause:** ~10 Hz DOS motion sim vs 72–90 Hz XR; `SyncXrOriginFromGimbal` applies discrete floor deltas. Possible interaction with body-yaw alignment in `motion_player.cs`.
-- **Tried (did not fix):** Snap-turn-only play-space rotation; head XZ compensation threshold; smooth XROrigin lerp; per-physics-frame snap turn.
-- **Next ideas:** Profile motion tick vs physics frame order; interpolate display position without changing sim; run VR motion input sampling every physics frame while keeping `PlayerMotion` at 10 Hz; inspect collision micro-corrections on forward axis.
 
 ### Close object look misses ("you see nothing")
 - **Symptom:** Nearby objects (e.g. bedroll at feet) sometimes return "you see nothing" in look mode.
@@ -46,6 +40,7 @@ Last updated from native VR work through conversation fixes (commit `3289f01` on
 - Inventory rainbow outlines after HUD SubViewport move
 - Conversation UI: HUD auto-show, laser on panel, numbered scroll selection
 - Play-space rotation decoupled from gradual body-yaw drift (snap turn only)
+- Forward locomotion: smooth XROrigin follow via `motionBlend` interpolation between DOS motion ticks (`EndMotionStep` / `GetDisplayFloorPos`, blend from `main._PhysicsProcess`)
 
 ## Key files
 

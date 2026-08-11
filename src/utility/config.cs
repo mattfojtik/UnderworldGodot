@@ -104,6 +104,10 @@ public class uwsettings
     public string datafolder { get; set; } = "DATA";
     /// <summary>Print VR diagnostics and draw bright debug geometry in the headset.</summary>
     public bool vr_debug { get; set; } = true;
+    /// <summary>Throttled logs for intro/menu laser and body-marker visibility (also enabled when vr_debug is true).</summary>
+    public bool vr_intro_debug { get; set; } = false;
+    /// <summary>Append native VR diagnostics to user://vr_diag.log and project logs/vr_diag.log.</summary>
+    public bool vr_diag_log { get; set; } = true;
     /// <summary>Append VR weapon-hand motion samples to user://vr_combat_motion.log for gesture tuning.</summary>
     public bool vr_combat_motion_log { get; set; } = true;
     /// <summary>Show torso-local slash/bash/stab planes and weapon-hand marker in combat mode.</summary>

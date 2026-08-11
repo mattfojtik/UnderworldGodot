@@ -97,7 +97,7 @@ namespace Underworld
 			_root.AddChild(_neckPlane);
 			_root.AddChild(_stabPlane);
 			_root.AddChild(_weaponHandMarker);
-			GD.Print("[VR combat] Gesture plane overlays created (0.1m, 75% transparent).");
+			VrDiagLog.Print("[VR combat] Gesture plane overlays created (0.1m, 75% transparent).");
 			return true;
 		}
 

@@ -182,6 +182,20 @@ namespace Underworld
             }
         }
 
+        /// <summary>Native VR: run a world interaction verb without changing the HUD mode button.</summary>
+        public static void PerformVrObjectInteraction(int index, InteractionModes mode)
+        {
+            if (playerdat.ParalyseTimer > 0)
+            {
+                return;
+            }
+
+            var previous = InteractionMode;
+            InteractionMode = mode;
+            InteractWithObjectCollider(index, LeftClick: true);
+            InteractionMode = previous;
+        }
+
         static bool CanReach(uwObject obj, int UseDistance)
         {
             if (UseDistance == 0)
@@ -309,7 +323,7 @@ namespace Underworld
         }
 
 
-        /// <summary>Native VR: right grip toggles weapon drawn / combat mode vs explore.</summary>
+        /// <summary>Native VR: right B toggles weapon drawn / combat mode vs explore.</summary>
         public static void ToggleVrCombatMode()
         {
             if (playerdat.play_hp == 0 || blockinput || playerdat.ObjectInHand != -1 || UsageMode != 0)
@@ -327,7 +341,7 @@ namespace Underworld
                 }
 
                 VrCombatMotionLog.LogCombatMode(entering: false);
-                InteractionModeToggle(InteractionModes.ModeLook);
+                InteractionModeToggle(InteractionModes.ModeUse);
                 return;
             }
 

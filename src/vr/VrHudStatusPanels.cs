@@ -651,6 +651,12 @@ public static partial class VrController
 			return;
 		}
 
+		var ui = underworld.GetNodeOrNull<CanvasLayer>("UI");
+		if (ui != null)
+		{
+			EnsureVrUiViewport(underworld, ui);
+		}
+
 		InitStatusWidgetsIfNeeded();
 		foreach (var widget in _statusWidgets)
 		{
@@ -1016,7 +1022,7 @@ public static partial class VrController
 		UpdateXrViewportHdrForUiMode();
 		_hudViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
 		RefreshVrUiQuadMaterial();
-		GD.Print("[VR] Cinema screen enabled for death cutscene.");
+		VrDiagLog.Print("[VR] Cinema screen enabled for death cutscene.");
 		return true;
 	}
 
@@ -1213,13 +1219,13 @@ public static partial class VrController
 	/// </summary>
 	static void ApplyStatusOverlayPointerInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror || _hudViewport == null || _rightController == null)
+		if (!IsActive || uwsettings.instance.vr_mirror || _hudViewport == null || GetAimController() == null)
 		{
 			ClearStatusOverlayPointerState();
 			return;
 		}
 
-		if (_hudPointerHovering)
+		if (_hudPointerHovering && !_statusOverlayHovering)
 		{
 			ClearStatusOverlayPointerState();
 			return;
@@ -1231,7 +1237,7 @@ public static partial class VrController
 			return;
 		}
 
-		var rayOrigin = _rightController.GlobalPosition;
+		var rayOrigin = GetAimRayOrigin();
 		var rayDir = GetControllerRayDir();
 		var hovering = TryGetClosestClickableStatusWidgetHit(
 			rayOrigin,
@@ -1266,26 +1272,26 @@ public static partial class VrController
 
 		UpdateInventoryOverlayCursor(hudPos, show: widget.Kind == VrStatusWidgetKind.Inventory);
 
-		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+		var leftPressed = IsHudPointerLeftClickHeld(menuScreen: false);
 		if (leftPressed && !_statusOverlayLeftWasPressed)
 		{
 			if (!TryDismissMessageMore()
 				&& !TryConfirmYesNoPrompt(hudPos, yes: true)
 				&& !TrySelectConversationOption(hudPos))
 			{
-				PushHudMouseClick(hudPos, MouseButton.Left);
+				PushVrHudMouseClick(hudPos, MouseButton.Left);
 			}
 		}
 		_statusOverlayLeftWasPressed = leftPressed;
 
-		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+		var rightPressed = IsHudPointerRightClickHeld(menuScreen: false);
 		if (rightPressed && !_statusOverlayRightWasPressed)
 		{
 			if (!TryDismissMessageMore()
 				&& !TryConfirmYesNoPrompt(hudPos, yes: false)
 				&& !TrySelectConversationOption(hudPos))
 			{
-				PushHudMouseClick(hudPos, MouseButton.Right);
+				PushVrHudMouseClick(hudPos, MouseButton.Right);
 			}
 		}
 		_statusOverlayRightWasPressed = rightPressed;

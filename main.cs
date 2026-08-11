@@ -101,6 +101,12 @@ public partial class main : Node3D
 
 	}
 
+	public override void _ExitTree()
+	{
+		VrController.CloseLogSessions();
+		base._ExitTree();
+	}
+
 	/// <summary>
 	/// Experiment Emulation of an old skol PIT Timer
 	/// </summary>
@@ -290,6 +296,12 @@ public partial class main : Node3D
 				mat.SetShaderParameter("uwgame", (int)1);				
 			}			
 		}
+
+		// VR pointer/laser must run at frame rate (OpenXR poses), not physics rate.
+		if (uwsettings.instance != null && uwsettings.instance.vr && VrController.ShouldTickVrInput())
+		{
+			VrController.TickVrInput();
+		}
 	}
 
 	public override void _PhysicsProcess(double delta)
@@ -405,12 +417,6 @@ public partial class main : Node3D
 		if (uwsettings.instance.vr)
 		{
 			VrController.TickRuntime((float)delta, motionBlend);
-		}
-
-		// VR pointer/laser must keep updating during conversations and other blockinput menus.
-		if (VrController.ShouldTickVrInput())
-		{
-			VrController.TickVrInput();
 		}
 
 		if ((uimanager.InGame) && (!uimanager.blockinput))

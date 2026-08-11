@@ -186,7 +186,10 @@ namespace Underworld
 				// Head look: OpenXR on XRCamera. Body yaw: XROrigin play-space rotation.
 				var visionYaw = VrController.GetHeadYawForVision();
 				VrController.UpdateVisionHeadingFromYaw(visionYaw);
-				VrController.UpdateVisionFromHead(CameraTileX, CameraTileY, visionYaw);
+				if (uimanager.InGame)
+				{
+					VrController.UpdateVisionFromHead(CameraTileX, CameraTileY, visionYaw);
+				}
 			}
             else
             {

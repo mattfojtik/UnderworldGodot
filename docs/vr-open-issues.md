@@ -2,10 +2,18 @@
 
 Canonical list for native Quest/OpenXR VR work. Agent skill copy: `.cursor/skills/underworld-vr-native/open-issues.md`.
 
-## High priority
+## Diagnostics
 
-### Movement jitter when running forward
-Regular forward run feels jaggy with occasional small backward hitch. Worse running in initial spawn direction than opposite. ~10 Hz motion sim vs XR frame rate is suspected. Smoothing XROrigin and head-aim picking were tried and reverted/did not help.
+VR sessions write readable log files (also mirrored to Godot console):
+
+| Log | Workspace (agent-readable) | Godot user data |
+|-----|---------------------------|-----------------|
+| General VR / intro laser | `logs/vr_diag.log` | `%APPDATA%/Godot/app_userdata/Underworld/vr_diag.log` |
+| Combat motion CSV | `logs/vr_combat_motion.log` | `%APPDATA%/Godot/app_userdata/Underworld/vr_combat_motion.log` |
+
+Settings in `user://settings.json`: `vr_diag_log` (default true), `vr_debug`, `vr_intro_debug` (intro/menu snapshots), `vr_combat_motion_log`.
+
+## High priority
 
 ### Close object look misses
 Nearby floor objects (e.g. bedroll) sometimes return "you see nothing" when laser should hit. Must fix with controller laser only (not head gaze).
@@ -27,5 +35,6 @@ Nearby floor objects (e.g. bedroll) sometimes return "you see nothing" when lase
 - Inventory sprites after HUD viewport move
 - Conversations via hand HUD + message scroll
 - VR input during conversation/automap (`ShouldTickVrInput`)
+- Smooth forward locomotion (XROrigin interpolates between ~10 Hz DOS motion steps at XR frame rate)
 
 See `.cursor/skills/underworld-vr-native/open-issues.md` for full detail, file map, and failed approaches.

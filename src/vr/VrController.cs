@@ -57,6 +57,10 @@ public static partial class VrController
 	static bool _vrEscapeWasPressed;
 	static MeshInstance3D _pointerLaser;
 	static CylinderMesh _pointerLaserMesh;
+	static Node3D _pointerLaserWorldParent;
+	static bool _pointerLaserOnCamera;
+	static bool _pointerLaserOnController;
+	static bool _introDiagLastLaserVisible;
 	static bool _hudPanelVisible = true;
 	static bool _headOverlaysVisible = true;
 	static bool _hudMenuToggleWasPressed;
@@ -71,11 +75,15 @@ public static partial class VrController
 	static Vector2 _lastStatusOverlayHudPos = new(-1f, -1f);
 	static bool _statusOverlayLeftWasPressed;
 	static bool _statusOverlayRightWasPressed;
-	static bool _worldPointerLeftWasPressed;
-	static bool _worldPointerRightWasPressed;
+	static bool _dominantGripWasPressed;
+	static bool _dominantTriggerWasPressed;
+	static bool _offHandGripWasPressed;
+	static bool _offHandTriggerWasPressed;
+	static bool _spellCastTriggerWasPressed;
+	static bool _spellCastGripWasPressed;
 	static bool _numberPadLeftWasPressed;
 	static Vector2 _lastNumberPadPointerPos = new(-1f, -1f);
-	static bool _combatGripWasPressed;
+	static bool _combatToggleWasPressed;
 	static float _pendingPickupRayDistance;
 	static int _vrHeldObjectIndex = -1;
 	static float _vrHeldRayDistance = 1f;
@@ -83,11 +91,9 @@ public static partial class VrController
 	static main _gameRoot;
 	static SceneTree _sceneTree;
 	static float _snapTurnCooldown;
-	static float _doorUseCooldown;
-	static bool _doorUseWasPressed;
 	static bool _jumpWasPressed;
 	static bool _recenterWasPressed;
-	static bool _quitWasPressed;
+	static bool _spellCastShortcutWasPressed;
 	static bool _xrOriginFloorInitialized;
 	static Vector3 _lastSyncedDisplayFloorPos;
 	static Vector3 _motionStepPrevFloor;
@@ -112,7 +118,6 @@ public static partial class VrController
 	const float MirrorScreenWidthMeters = 1.5f;
 	const float MirrorScreenDistanceMeters = 0.85f;
 	const float BodyMarkerScale = 0.1f;
-	const float DoorUseCooldownSeconds = 0.35f;
 	const float HudPointerMaxDistance = 2.5f;
 	const float MenuTvPointerMaxDistance = 4f;
 	const float StatusOverlayPointerMaxDistance = 4f;
@@ -127,6 +132,8 @@ public static partial class VrController
 	static readonly Vector3 HudPanelLocalPosition = new(0.04f, 0.06f, 0.14f);
 	/// <summary>Tilt/yaw so the panel faces roughly toward the user from the left grip.</summary>
 	static readonly Vector3 HudPanelLocalRotationDegrees = new(-70f, 180f, 180f);
+	/// <summary>Grip-to-aim offset for menu pointer laser visual (controller local metres). Ray hits stay on grip pose.</summary>
+	static readonly Vector3 MenuPointerLaserAimOffset = new(0f, -0.032f, -0.048f);
 	/// <summary>Eye height above floor in Godot metres (0xA4 game units).</summary>
 	static float GameEyeHeightMeters => (0xA4 / 1024f) * tileMapRender.godotscale.Y;
 
@@ -153,14 +160,21 @@ public static partial class VrController
 		"b_button",
 	};
 
+	static readonly StringName[] RecenterStickClickActions =
+	{
+		"thumbstick_click",
+		"joystick_click",
+		"primary_click",
+	};
+
 	static readonly StringName[] JumpButtonActions =
 	{
 		"ax_button",
 		"a_button",
 	};
 
-	// Left-hand ax_button is Quest X; right-hand ax_button is A (jump).
-	static readonly StringName[] QuitButtonActions =
+	// Left-hand ax_button is Quest X (spell cast shortcut while runes are ready).
+	static readonly StringName[] SpellCastShortcutActions =
 	{
 		"ax_button",
 		"x_button",
@@ -199,6 +213,13 @@ public static partial class VrController
 		playerdat.play_hp = playerdat.max_hp;
 	}
 
+	/// <summary>Flush and close VR log files (call on quit).</summary>
+	public static void CloseLogSessions()
+	{
+		VrCombatMotionLog.CloseSession();
+		VrDiagLog.CloseSession();
+	}
+
 	public static void TryInitialize(main gameRoot)
 	{
 		if (!uwsettings.instance.vr)
@@ -216,6 +237,7 @@ public static partial class VrController
 			return;
 		}
 
+		VrDiagLog.EnsureSession();
 		VrDebugLog("TryInitialize", $"OpenXR found, initialized={xrInterface.IsInitialized()}");
 
 		ApplyVrWorldScale(gameRoot);
@@ -233,7 +255,7 @@ public static partial class VrController
 		DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
 		ConfigureRootWindowForXr(gameRoot.GetTree());
 
-		GD.Print("[VR] OpenXR initialized; waiting for SceneTree.ProcessFrame to create XRCamera.");
+		VrDiagLog.Print("[VR] OpenXR initialized; waiting for SceneTree.ProcessFrame to create XRCamera.");
 	}
 
 	/// <summary>
@@ -273,7 +295,7 @@ public static partial class VrController
 		EnsureVrTilemapScale(gameRoot);
 
 		_vrWorldScaleApplied = true;
-		GD.Print($"[VR] World scale {scale}x, sprite scale {spriteScale}x — godotscale={tileMapRender.godotscale}, tilemap.Scale={GetTilemapNode(gameRoot)?.Scale}");
+		VrDiagLog.Print($"[VR] World scale {scale}x, sprite scale {spriteScale}x — godotscale={tileMapRender.godotscale}, tilemap.Scale={GetTilemapNode(gameRoot)?.Scale}");
 	}
 
 	/// <summary>Tile verts use hardcoded 1.2f; scale the tilemap node so geometry matches godotscale coords.</summary>
@@ -621,7 +643,7 @@ public static partial class VrController
 		_setupWaitFrames = 0;
 
 		HookProcessFrame();
-		GD.Print("[VR] FinishWorldSetup queued on SceneTree.ProcessFrame.");
+		VrDiagLog.Print("[VR] FinishWorldSetup queued on SceneTree.ProcessFrame.");
 	}
 
 	public static void TickRuntime(float delta, float motionBlend = 1f)
@@ -643,11 +665,6 @@ public static partial class VrController
 			_snapTurnCooldown -= delta;
 		}
 
-		if (_doorUseCooldown > 0f)
-		{
-			_doorUseCooldown -= delta;
-		}
-
 		if (uwsettings.instance.vr_mirror)
 		{
 			SyncXrOriginBodyFromGame();
@@ -655,7 +672,7 @@ public static partial class VrController
 		}
 		else
 		{
-			ApplyQuitInput();
+			ApplySpellCastShortcutInput();
 			ApplyHudMenuToggleInput();
 			ApplyRecenterInput();
 			RetryPendingVrHudSetup();
@@ -685,23 +702,38 @@ public static partial class VrController
 	/// <summary>True when VR pointer/laser input should run (includes conversations and automap).</summary>
 	public static bool ShouldTickVrInput()
 	{
-		if (!IsActive || !uwsettings.instance.vr || uwsettings.instance.vr_mirror)
+		if (!uwsettings.instance.vr || uwsettings.instance.vr_mirror)
 		{
+			IntroDiagLogOnce(ref _introDiagLastLaserSkipReason, "tick-vr-off",
+				"ShouldTickVrInput=false (vr off or mirror mode).");
 			return false;
 		}
 
-		return uimanager.InGame || uimanager.InConversation || uimanager.InAutomap
+		var tick = uimanager.InGame || uimanager.InConversation || uimanager.InAutomap
 			|| uimanager.AtMainMenu
 			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE
-			|| uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS;
+			|| uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS
+			|| IsHudOnMenuScreen();
+		if (!tick)
+		{
+			IntroDiagLogOnce(ref _introDiagLastLaserSkipReason, "tick-vr-mode-skip",
+				$"ShouldTickVrInput=false (mode={uimanager.CurrentGameMode} active={IsActive} menuTv={IsHudOnMenuScreen()}).");
+		}
+
+		return tick;
 	}
 
 	/// <summary>VR pointer/attack input — runs in _Process so combat reads grip on the same frame.</summary>
 	public static void TickVrInput()
 	{
-		if (!IsActive)
+		if (!uwsettings.instance.vr || uwsettings.instance.vr_mirror)
 		{
 			return;
+		}
+
+		if (NeedsFrontMenuLaser() || uimanager.AtMainMenu)
+		{
+			LogIntroDiagSnapshot("TickVrInput");
 		}
 
 		if (VrNumberPad.IsVisible)
@@ -710,30 +742,200 @@ public static partial class VrController
 		}
 		else
 		{
+			if (IsActive && uimanager.InGame)
+			{
+				ApplyStatusOverlayPointerInput();
+			}
+
 			ApplyHudPointerInput();
-			ApplyStatusOverlayPointerInput();
 		}
 
-		ApplyCombatModeToggleInput();
-		VrCombatMotion.Tick();
-		VrCombatMotionDebug.Update(VrCombatMotion.ShouldShowGesturePlanes(), VrCombatMotion.GetDebugWeaponHandLocal());
-		if (!VrNumberPad.IsVisible)
+		if (IsActive)
 		{
-			ApplyWorldPointerInput();
+			ApplyCombatModeToggleInput();
+			VrCombatMotion.Tick();
+			VrCombatMotionDebug.Update(VrCombatMotion.ShouldShowGesturePlanes(), VrCombatMotion.GetDebugWeaponHandLocal());
+			if (!VrNumberPad.IsVisible)
+			{
+				if (SpellCasting.currentSpell != null)
+				{
+					ApplySpellTargetingInput();
+				}
+				else
+				{
+					ApplyExplorationVerbInput();
+				}
+			}
+			else
+			{
+				IsVrWorldPointerActive = false;
+				IsVrWorldRightHeld = false;
+				ResetExplorationVerbPressState();
+				ResetSpellTargetingPressState();
+			}
+
+			UpdateHeldObjectVisual();
+			UpdateMessageScrollPanel();
+			UpdateVrStatusPanels();
 		}
-		else
-		{
-			IsVrWorldPointerActive = false;
-			IsVrWorldRightHeld = false;
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
-		}
+
 		UpdateVrGameplayPointerLaser();
-		UpdateHeldObjectVisual();
-		UpdateMessageScrollPanel();
-		UpdateVrStatusPanels();
-		ApplyDoorInteraction();
+		if (VrNumberPad.IsVisible && NeedsFrontMenuLaser())
+		{
+			EnsureFrontMenuLaserDrawn();
+		}
 	}
+
+	static XRController3D GetMenuPointerController() => _rightController ?? _leftController;
+
+	/// <summary>Intro/menu TV keeps the right-hand pointer; in-game HUD uses the aim hand.</summary>
+	static void GetHudPointerRay(bool menuScreen, out Vector3 rayOrigin, out Vector3 rayDir)
+	{
+		if (menuScreen)
+		{
+			rayOrigin = GetMenuPointerRayOrigin();
+			rayDir = GetMenuPointerRayDir();
+			return;
+		}
+
+		rayOrigin = GetAimRayOrigin();
+		rayDir = GetControllerRayDir();
+	}
+
+	/// <summary>Menu TV: trigger only. In-game HUD/inventory: dominant trigger or grip.</summary>
+	static bool IsHudPointerLeftClickHeld(bool menuScreen)
+	{
+		if (menuScreen)
+		{
+			var menuPointer = GetMenuPointerController();
+			return menuPointer != null && IsButtonPressed(menuPointer, HudLeftClickActions);
+		}
+
+		var dominant = GetDominantController();
+		return dominant != null
+			&& (IsButtonPressed(dominant, HudLeftClickActions)
+				|| IsButtonPressed(dominant, HudRightClickActions));
+	}
+
+	/// <summary>Menu TV: grip on menu pointer. In-game HUD: off-hand grip (Talk hand).</summary>
+	static bool IsHudPointerRightClickHeld(bool menuScreen)
+	{
+		if (menuScreen)
+		{
+			var menuPointer = GetMenuPointerController();
+			return menuPointer != null && IsButtonPressed(menuPointer, HudRightClickActions);
+		}
+
+		var offHand = GetOffHandController();
+		return offHand != null && IsButtonPressed(offHand, HudRightClickActions);
+	}
+
+	static bool IsMenuControllerTrackingReady(XRController3D controller)
+	{
+		if (controller == null)
+		{
+			return false;
+		}
+
+		// OpenXR updates GlobalTransform before local Position is meaningful on some runtimes.
+		if (controller.GlobalTransform.Origin.LengthSquared() > 0.0004f)
+		{
+			return true;
+		}
+
+		return controller.Position.LengthSquared() > 0.0004f;
+	}
+
+	static bool UseHeadRayForMenuPointer()
+	{
+		if (!IsHudOnMenuScreen() || _xrCamera == null)
+		{
+			return false;
+		}
+
+		return !IsMenuControllerTrackingReady(GetMenuPointerController());
+	}
+
+	static Vector3 GetMenuPointerRayOrigin()
+	{
+		var controller = GetMenuPointerController();
+		if (IsHudOnMenuScreen() && IsMenuControllerTrackingReady(controller))
+		{
+			return controller.GlobalPosition;
+		}
+
+		if (UseHeadRayForMenuPointer())
+		{
+			var basis = _xrCamera.GlobalTransform.Basis;
+			return _xrCamera.GlobalPosition + basis * new Vector3(0.08f, -0.08f, 0f);
+		}
+
+		return controller?.GlobalPosition ?? GetAimRayOrigin();
+	}
+
+	static Vector3 GetRayDirFromController(XRController3D controller)
+	{
+		if (controller == null)
+		{
+			return Vector3.Forward;
+		}
+
+		var rayDir = -controller.GlobalTransform.Basis.Z;
+		if (rayDir.LengthSquared() < 0.0001f)
+		{
+			rayDir = -controller.GlobalTransform.Basis.Y;
+		}
+
+		return rayDir.Normalized();
+	}
+
+	static Vector3 GetMenuPointerRayDir()
+	{
+		var controller = GetMenuPointerController();
+		if (IsHudOnMenuScreen() && IsMenuControllerTrackingReady(controller))
+		{
+			return GetRayDirFromController(controller);
+		}
+
+		if (UseHeadRayForMenuPointer())
+		{
+			var forward = -_xrCamera.GlobalTransform.Basis.Z;
+			return forward.LengthSquared() > 0.0001f ? forward.Normalized() : Vector3.Forward;
+		}
+
+		return GetRayDirFromController(controller);
+	}
+
+	/// <summary>Guarantee a visible laser on intro/menu screens (ApplyHudPointerInput can bail early).</summary>
+	static void EnsureFrontMenuLaserDrawn()
+	{
+		if (!uwsettings.instance.vr)
+		{
+			IntroDiagLogOnce(ref _introDiagLastLaserSkipReason, "menu-laser-vr-off", "menu laser: vr disabled.");
+			return;
+		}
+
+		if (uwsettings.instance.vr_mirror)
+		{
+			IntroDiagLogOnce(ref _introDiagLastLaserSkipReason, "menu-laser-mirror", "menu laser: mirror mode.");
+			return;
+		}
+
+		if (!NeedsFrontMenuLaser())
+		{
+			IntroDiagLogOnce(ref _introDiagLastLaserSkipReason, "menu-laser-not-needed",
+				$"menu laser: NeedsFrontMenuLaser=false (mode={uimanager.CurrentGameMode} atMain={uimanager.AtMainMenu} menuTv={IsHudOnMenuScreen()}).");
+			return;
+		}
+
+		DrawMenuTvLaserOnly();
+	}
+
+	static bool NeedsFrontMenuLaser() =>
+		IsHudOnMenuScreen()
+		|| uimanager.AtMainMenu
+		|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE
+		|| uimanager.CurrentGameMode == uimanager.GameModes.OPTIONS;
 
 	static void HookProcessFrame()
 	{
@@ -744,7 +946,7 @@ public static partial class VrController
 
 		_sceneTree.ProcessFrame += OnProcessFrame;
 		_processFrameHooked = true;
-		GD.Print("[VR] Hooked SceneTree.ProcessFrame.");
+		VrDiagLog.Print("[VR] Hooked SceneTree.ProcessFrame.");
 	}
 
 	static void UnhookProcessFrame()
@@ -780,7 +982,7 @@ public static partial class VrController
 		{
 			if (_setupWaitFrames <= 5)
 			{
-				GD.Print("[VR] TickWorldSetup: waiting for gameRoot in tree.");
+				VrDiagLog.Print("[VR] TickWorldSetup: waiting for gameRoot in tree.");
 			}
 
 			return;
@@ -791,7 +993,7 @@ public static partial class VrController
 		{
 			if (_setupWaitFrames <= 5)
 			{
-				GD.Print("[VR] TickWorldSetup: waiting for Underworld in tree.");
+				VrDiagLog.Print("[VR] TickWorldSetup: waiting for Underworld in tree.");
 			}
 
 			return;
@@ -799,7 +1001,7 @@ public static partial class VrController
 
 		if (_xrOrigin == null)
 		{
-			GD.Print($"[VR] TickWorldSetup frame={_setupWaitFrames}: creating XR rig.");
+			VrDiagLog.Print($"[VR] TickWorldSetup frame={_setupWaitFrames}: creating XR rig.");
 			CreateXrRig(underworld);
 		}
 
@@ -807,7 +1009,7 @@ public static partial class VrController
 		{
 			if (_setupWaitFrames <= 10)
 			{
-				GD.Print($"[VR] TickWorldSetup frame={_setupWaitFrames}: XRCamera not in tree yet (origin={_xrOrigin?.IsInsideTree()}).");
+				VrDiagLog.Print($"[VR] TickWorldSetup frame={_setupWaitFrames}: XRCamera not in tree yet (origin={_xrOrigin?.IsInsideTree()}).");
 			}
 
 			return;
@@ -858,8 +1060,8 @@ public static partial class VrController
 			EnsureWorldEnvironment(underworld);
 		}
 
-		GD.Print($"[VR] CreateXrRig: XROrigin inTree={_xrOrigin.IsInsideTree()} path={_xrOrigin.GetPath()}");
-		GD.Print($"[VR] CreateXrRig: XRCamera inTree={_xrCamera.IsInsideTree()} path={_xrCamera.GetPath()}");
+		VrDiagLog.Print($"[VR] CreateXrRig: XROrigin inTree={_xrOrigin.IsInsideTree()} path={_xrOrigin.GetPath()}");
+		VrDiagLog.Print($"[VR] CreateXrRig: XRCamera inTree={_xrCamera.IsInsideTree()} path={_xrCamera.GetPath()}");
 	}
 
 	static void FinishActivation(Node3D underworld)
@@ -890,24 +1092,43 @@ public static partial class VrController
 				EnsureVrStatusPanels(underworld);
 			}
 		}
-		playerdat.RefreshLighting();
-		ResetXrOriginFloorTracking();
-		playerdat.PositionPlayerCamera();
-		InitializeMotionStep();
-		SnapRoomOriginToAvatar();
-		if (uimanager.InGame)
+		try
 		{
-			uimanager.UpdateInventoryDisplay();
+			playerdat.RefreshLighting();
+			ResetXrOriginFloorTracking();
+			InitializeMotionStep();
+			if (uimanager.InGame)
+			{
+				playerdat.PositionPlayerCamera();
+				SnapRoomOriginToAvatar();
+				uimanager.UpdateInventoryDisplay();
+			}
+			else
+			{
+				SyncXrOriginFromGimbal();
+			}
 		}
-
-		TryEnableOpenXrOutput();
-
-		LogVrSetupState(_gameRoot, _sceneTree.Root.GetViewport(), "FinishActivation");
-		GD.Print($"[VR] Active — display mode: {(uwsettings.instance.vr_mirror ? "mirror (SubViewport screen)" : "native world")}");
-		GD.Print($"[VR] Head tracking: passthrough (OpenXR local pose, origin at game floor)");
-		if (_vrWorldScaleApplied)
+		catch (Exception ex)
 		{
-			GD.Print($"[VR] World scale: {uwsettings.instance.vr_world_scale}x");
+			VrDiagLog.Warn($"[VR] FinishActivation post-setup failed: {ex}");
+		}
+		finally
+		{
+			UpdateBodyMarker();
+			TryEnableOpenXrOutput();
+			LogVrSetupState(_gameRoot, _sceneTree.Root.GetViewport(), "FinishActivation");
+			LogIntroDiagSnapshot("FinishActivation", force: true);
+			if (IsHudOnMenuScreen())
+			{
+				ApplyHudPointerInput();
+			}
+
+			VrDiagLog.Print($"[VR] Active — display mode: {(uwsettings.instance.vr_mirror ? "mirror (SubViewport screen)" : "native world")}");
+			VrDiagLog.Print($"[VR] Head tracking: passthrough (OpenXR local pose, origin at game floor)");
+			if (_vrWorldScaleApplied)
+			{
+				VrDiagLog.Print($"[VR] World scale: {uwsettings.instance.vr_world_scale}x");
+			}
 		}
 	}
 
@@ -926,7 +1147,7 @@ public static partial class VrController
 
 		_openXrOutputEnabled = true;
 		UpdateXrViewportHdrForUiMode();
-		GD.Print($"[VR] OpenXR output enabled. UseXR={rootViewport.UseXR} UseHdr2D={rootViewport.UseHdr2D} menuTv={_vrUiOnMenuTv} XRCamera path={_xrCamera.GetPath()} Current={_xrCamera.Current}");
+		VrDiagLog.Print($"[VR] OpenXR output enabled. UseXR={rootViewport.UseXR} UseHdr2D={rootViewport.UseHdr2D} menuTv={_vrUiOnMenuTv} XRCamera path={_xrCamera.GetPath()} Current={_xrCamera.Current}");
 	}
 
 	static void SetupNativeWorldCamera()
@@ -982,7 +1203,7 @@ public static partial class VrController
 		};
 		_xrCamera.AddChild(quad);
 
-		GD.Print($"[VR] Mirror screen attached ({MirrorScreenWidthMeters:F1}m wide).");
+		VrDiagLog.Print($"[VR] Mirror screen attached ({MirrorScreenWidthMeters:F1}m wide).");
 	}
 
 	static void ConfigureFlatScreenPresentation(main gameRoot)
@@ -1009,6 +1230,7 @@ public static partial class VrController
 	{
 		if (_hudViewport != null)
 		{
+			EnsureHudMouseLayer();
 			return true;
 		}
 
@@ -1061,8 +1283,8 @@ public static partial class VrController
 				Size = quadSize,
 				Material = CreateVrUiQuadMaterial(),
 			},
-			Position = HudPanelLocalPosition,
-			RotationDegrees = HudPanelLocalRotationDegrees,
+			Position = GetHudPanelLocalPosition(),
+			RotationDegrees = GetHudPanelLocalRotationDegrees(),
 			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
 			Layers = main.LayerGeo | main.LayerXFER,
 		};
@@ -1070,13 +1292,14 @@ public static partial class VrController
 
 	static void AttachHandHudMesh(Vector2 quadSize)
 	{
-		if (_leftController == null)
+		var hudHand = GetHudHandController();
+		if (hudHand == null)
 		{
 			return;
 		}
 
 		_hudPanel = CreateHandHudMesh(quadSize);
-		_leftController.AddChild(_hudPanel);
+		hudHand.AddChild(_hudPanel);
 	}
 
 	static void ResizeVrHudDisplay(Vector2 size)
@@ -1203,7 +1426,7 @@ public static partial class VrController
 
 		RegisterVrMessageScrollOutput(FindScrollLabelInTree(duplicate));
 		uimanager.instance?.scroll?.UpdateMessageDisplay();
-		GD.Print($"[VR] Message scroll viewport ready ({_messageScrollViewport.Size.X}x{_messageScrollViewport.Size.Y}).");
+		VrDiagLog.Print($"[VR] Message scroll viewport ready ({_messageScrollViewport.Size.X}x{_messageScrollViewport.Size.Y}).");
 		return true;
 	}
 
@@ -1249,7 +1472,7 @@ public static partial class VrController
 			Visible = false,
 		};
 		_xrCamera.AddChild(_messageScrollPanel);
-		GD.Print($"[VR] Message scroll panel attached to headset ({quadSize.X:F2}m wide).");
+		VrDiagLog.Print($"[VR] Message scroll panel attached to headset ({quadSize.X:F2}m wide).");
 	}
 
 	static Vector2 GetMessageScrollOffsetMeters() => new(
@@ -1455,14 +1678,14 @@ public static partial class VrController
 	{
 		if (_xrCamera == null)
 		{
-			GD.PushWarning("[VR] Menu TV: XRCamera missing.");
+			VrDiagLog.Warn("[VR] Menu TV: XRCamera missing.");
 			return;
 		}
 
 		var ui = GetVrUiCanvasLayer(underworld);
 		if (ui == null)
 		{
-			GD.PushWarning("[VR] Menu TV: UI CanvasLayer not found.");
+			VrDiagLog.Warn("[VR] Menu TV: UI CanvasLayer not found.");
 			return;
 		}
 
@@ -1524,7 +1747,7 @@ public static partial class VrController
 			_sceneTree.ProcessFrame += OnMenuTvFirstFrame;
 		}
 
-		GD.Print($"[VR] Menu TV screen attached to XRCamera ({width:F2}m wide, {HudPanelWidthPx}x{HudPanelHeightPx}).");
+		VrDiagLog.Print($"[VR] Menu TV screen attached to XRCamera ({width:F2}m wide, {HudPanelWidthPx}x{HudPanelHeightPx}).");
 	}
 
 	static void OnMenuTvFirstFrame()
@@ -1550,9 +1773,10 @@ public static partial class VrController
 			return;
 		}
 
-		if (_leftController == null)
+		var hudHand = GetHudHandController();
+		if (hudHand == null)
 		{
-			GD.PushWarning("[VR] Menu TV → hand HUD deferred: left controller not ready.");
+			VrDiagLog.Warn("[VR] Menu TV → hand HUD deferred: off-hand controller not ready.");
 			return;
 		}
 
@@ -1574,7 +1798,7 @@ public static partial class VrController
 		SetHudPanelVisible(true);
 		EnsureMessageScrollPanel(_gameRoot?.GetParent<Node3D>());
 		EnsureVrStatusPanels(_gameRoot?.GetParent<Node3D>());
-		GD.Print($"[VR] Menu TV → hand HUD ({width:F2}m wide).");
+		VrDiagLog.Print($"[VR] Menu TV → hand HUD ({width:F2}m wide).");
 	}
 
 	static bool IsHudOnMenuScreen()
@@ -1679,7 +1903,7 @@ public static partial class VrController
 		SnapRoomOriginToAvatar();
 		uimanager.UpdateInventoryDisplay();
 		TryEnableOpenXrOutput();
-		GD.Print("[VR] Gameplay presentation ready (hand HUD, world lighting, origin snapped).");
+		VrDiagLog.Print("[VR] Gameplay presentation ready (hand HUD, world lighting, origin snapped).");
 	}
 
 	static void ApplyVrShortcutInput()
@@ -1712,7 +1936,7 @@ public static partial class VrController
 		if (_leftController != null)
 		{
 			var escape = IsButtonPressed(_leftController, DoorUseButtonActions);
-			if (escape && !_vrEscapeWasPressed)
+			if (escape && !_vrEscapeWasPressed && ShouldOfferVrEscapeGrip())
 			{
 				ApplyVrEscapeAction();
 			}
@@ -1730,7 +1954,7 @@ public static partial class VrController
 		if (MessageDisplay.WaitingForYesOrNo)
 		{
 			MessageDisplay.ConfirmYesNoResponse(false);
-			GD.Print("[VR] Yes/no declined (left grip = Escape).");
+			VrDiagLog.Print("[VR] Yes/no declined (left grip = Escape).");
 			return;
 		}
 
@@ -1739,7 +1963,7 @@ public static partial class VrController
 			MessageDisplay.CancelTypedInput();
 			VrOnScreenKeyboard.Hide();
 			VrNumberPad.Hide();
-			GD.Print("[VR] Typed input cancelled (left grip = Escape).");
+			VrDiagLog.Print("[VR] Typed input cancelled (left grip = Escape).");
 			return;
 		}
 
@@ -1747,13 +1971,13 @@ public static partial class VrController
 		{
 			case uimanager.GameModes.CUTSCENE:
 				cutsplayer.StopCutscene();
-				GD.Print("[VR] Cutscene skip (left grip = Escape).");
+				VrDiagLog.Print("[VR] Cutscene skip (left grip = Escape).");
 				break;
 			case uimanager.GameModes.MAIN:
 			case uimanager.GameModes.CHARGEN:
 			case uimanager.GameModes.JOURNEY:
 				uimanager.instance?.HandleFrontMenuEscape();
-				GD.Print("[VR] Front menu back (left grip = Escape).");
+				VrDiagLog.Print("[VR] Front menu back (left grip = Escape).");
 				break;
 			case uimanager.GameModes.GAME:
 				if (cutsplayer.IsPlaying)
@@ -1767,7 +1991,7 @@ public static partial class VrController
 
 	static void SetupHudHandPanel(Node3D underworld)
 	{
-		if (!uwsettings.instance.vr_hud_panel || _leftController == null)
+		if (!uwsettings.instance.vr_hud_panel || GetHudHandController() == null)
 		{
 			return;
 		}
@@ -1788,7 +2012,7 @@ public static partial class VrController
 		{
 			if (ui == null)
 			{
-				GD.PushWarning("[VR] HUD panel: UI CanvasLayer not found.");
+				VrDiagLog.Warn("[VR] HUD panel: UI CanvasLayer not found.");
 				return;
 			}
 
@@ -1810,7 +2034,7 @@ public static partial class VrController
 		SetHudPanelVisible(_hudPanelVisible);
 		UpdateXrViewportHdrForUiMode();
 		RefreshVrUiQuadMaterial();
-		GD.Print($"[VR] HUD hand panel attached to left controller ({width:F2}m wide, {HudPanelWidthPx}x{HudPanelHeightPx}).");
+		VrDiagLog.Print($"[VR] HUD hand panel attached to left controller ({width:F2}m wide, {HudPanelWidthPx}x{HudPanelHeightPx}).");
 	}
 
 	static void SetHudPanelVisible(bool visible)
@@ -1851,19 +2075,26 @@ public static partial class VrController
 	/// <summary>Laser is shown while either the hand HUD or head status overlays are open.</summary>
 	static bool ShouldShowVrGameplayPointerLaser()
 	{
-		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
+		if (IsVrInCombat() && SpellCasting.currentSpell == null)
 		{
 			return false;
 		}
 
-		return ShouldShowVrPointerLaser();
+		return ShouldShowVrPointerLaser() || SpellCasting.currentSpell != null;
 	}
 
-	static bool ShouldShowVrPointerLaser() => _hudPanelVisible || _headOverlaysVisible;
+	static bool ShouldShowVrPointerLaser() =>
+		_hudPanelVisible || _headOverlaysVisible || IsHudOnMenuScreen() || uimanager.AtMainMenu;
+
+	static bool HudPointerOwnsLaser() =>
+		VrNumberPad.IsVisible
+		|| NeedsFrontMenuLaser()
+		|| ShouldUseHudMenuPointerOnly()
+		|| (_hudPanelVisible && _hudPointerHovering);
 
 	static void RetryPendingVrHudSetup()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror || !uwsettings.instance.vr_hud_panel || _leftController == null)
+		if (!IsActive || uwsettings.instance.vr_mirror || !uwsettings.instance.vr_hud_panel || GetHudHandController() == null)
 		{
 			return;
 		}
@@ -1911,7 +2142,7 @@ public static partial class VrController
 		if (overlayPressed && !_hudMenuToggleWasPressed)
 		{
 			SetHeadOverlaysVisible(!_headOverlaysVisible);
-			GD.Print($"[VR] Head overlays {(_headOverlaysVisible ? "shown" : "hidden")} (Y).");
+			VrDiagLog.Print($"[VR] Head overlays {(_headOverlaysVisible ? "shown" : "hidden")} (Y).");
 		}
 
 		_hudMenuToggleWasPressed = overlayPressed;
@@ -1931,7 +2162,7 @@ public static partial class VrController
 		if (hudPressed && !_hudPanelToggleWasPressed)
 		{
 			SetHudPanelVisible(!_hudPanelVisible);
-			GD.Print($"[VR] HUD panel {(_hudPanelVisible ? "shown" : "hidden")} (menu).");
+			VrDiagLog.Print($"[VR] HUD panel {(_hudPanelVisible ? "shown" : "hidden")} (menu).");
 		}
 
 		_hudPanelToggleWasPressed = hudPressed;
@@ -1951,6 +2182,7 @@ public static partial class VrController
 			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
 			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
 			DisableReceiveShadows = true,
+			NoDepthTest = true,
 		};
 
 		_pointerLaserMesh = new CylinderMesh
@@ -1969,7 +2201,203 @@ public static partial class VrController
 			Layers = main.LayerGeo | main.LayerXFER,
 			Visible = false,
 		};
+		_pointerLaserWorldParent = underworld;
+		_pointerLaserOnCamera = false;
+		_pointerLaserOnController = false;
 		underworld.AddChild(_pointerLaser);
+	}
+
+	static void ReparentPointerLaserTo(Node3D parent, bool onCamera, float radius)
+	{
+		if (_pointerLaser == null || parent == null)
+		{
+			return;
+		}
+
+		_pointerLaserOnCamera = onCamera;
+		_pointerLaserOnController = !onCamera && parent is XRController3D;
+
+		if (_pointerLaser.GetParent() != parent)
+		{
+			_pointerLaser.GetParent()?.RemoveChild(_pointerLaser);
+			parent.AddChild(_pointerLaser);
+			_pointerLaser.Scale = Vector3.One;
+			_pointerLaser.TopLevel = false;
+		}
+
+		if (_pointerLaserMesh != null)
+		{
+			_pointerLaserMesh.TopRadius = radius;
+			_pointerLaserMesh.BottomRadius = radius;
+		}
+	}
+
+	static void ReparentPointerLaser(bool attachToCamera)
+	{
+		if (attachToCamera)
+		{
+			ReparentPointerLaserTo(_xrCamera, onCamera: true, PointerLaserRadius);
+		}
+		else
+		{
+			ReparentPointerLaserTo(_pointerLaserWorldParent, onCamera: false, PointerLaserRadius);
+		}
+	}
+
+	static void TryEnsureMenuTvScreen()
+	{
+		if (_hudViewport != null && _hudPanel != null && _vrUiOnMenuTv)
+		{
+			EnsureHudMouseLayer();
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld == null)
+		{
+			return;
+		}
+
+		SetupMenuTvScreen(underworld);
+		EnsureHudMouseLayer();
+	}
+
+	static void DrawMenuTvLaserOnly()
+	{
+		TryEnsureMenuTvScreen();
+
+		var controller = GetMenuPointerController();
+		if (controller == null || _hudPanel == null)
+		{
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (_pointerLaser == null && underworld != null)
+		{
+			EnsurePointerLaser(underworld);
+		}
+
+		var rayOrigin = GetMenuPointerRayOrigin();
+		var rayDir = GetMenuPointerRayDir();
+		var hasHit = TryGetHudPanelHit(rayOrigin, rayDir, MenuTvPointerMaxDistance, out _, out var hitWorld);
+		DrawMenuPointerLaser(controller, rayOrigin, rayDir, hasHit, hitWorld, MenuTvPointerMaxDistance);
+	}
+
+	static void ApplyMenuTvPointerInput()
+	{
+		var menuPointer = GetMenuPointerController();
+		if (menuPointer == null || _hudPanel == null)
+		{
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (_pointerLaser == null && underworld != null)
+		{
+			EnsurePointerLaser(underworld);
+		}
+
+		EnsureHudMouseLayer();
+
+		var rayOrigin = GetMenuPointerRayOrigin();
+		var rayDir = GetMenuPointerRayDir();
+		var hovering = TryGetHudPanelHit(
+			rayOrigin,
+			rayDir,
+			MenuTvPointerMaxDistance,
+			out var viewportPos,
+			out var hitWorld);
+
+		DrawMenuPointerLaser(menuPointer, rayOrigin, rayDir, hovering, hitWorld, MenuTvPointerMaxDistance);
+
+		if (hovering)
+		{
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = true;
+			}
+
+			if (viewportPos != _lastHudPointerPos)
+			{
+				_lastHudPointerPos = viewportPos;
+				PushHudMouseMotion(viewportPos);
+			}
+		}
+		else
+		{
+			_lastHudPointerPos = new Vector2(-1f, -1f);
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = false;
+			}
+		}
+
+		_hudPointerHovering = hovering;
+		UpdateMessageScrollHover(viewportPos, hovering);
+
+		if (!hovering)
+		{
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			return;
+		}
+
+		ApplyHudMenuPointerClicks(viewportPos, menuScreen: true);
+	}
+
+	static void UpdateMenuTvPointerLaser()
+	{
+		ApplyHudPointerInput();
+	}
+
+	static void EnsureHudMouseLayer()
+	{
+		if (_hudMouseLayer != null && GodotObject.IsInstanceValid(_hudMouseLayer))
+		{
+			return;
+		}
+
+		var ui = GetVrUiCanvasLayer(_gameRoot?.GetParent<Node3D>());
+		_hudMouseLayer = ui?.GetNodeOrNull<CanvasLayer>("mouse");
+	}
+
+	/// <summary>Draw menu laser using the same world ray as HUD hit tests, converted to controller local space.</summary>
+	static void DrawMenuPointerLaser(
+		XRController3D controller,
+		Vector3 rayOrigin,
+		Vector3 rayDir,
+		bool hasHit,
+		Vector3 hitWorld,
+		float maxDistance)
+	{
+		if (_pointerLaser == null || controller == null)
+		{
+			return;
+		}
+
+		ReparentPointerLaserTo(controller, onCamera: false, PointerLaserRadius);
+		var endWorld = hasHit ? hitWorld : rayOrigin + rayDir * maxDistance;
+		// Aim offset lowers the visible beam origin toward the controller front without moving the UI hit ray.
+		var fromLocal = MenuPointerLaserAimOffset;
+		var endLocal = controller.ToLocal(endWorld);
+		UpdatePointerLaser(fromLocal, endLocal, visible: true, localSpace: true);
+	}
+
+	static void LogLaserVisibilityIfChanged(bool visible, string reason)
+	{
+		if (visible == _introDiagLastLaserVisible)
+		{
+			return;
+		}
+
+		_introDiagLastLaserVisible = visible;
+		VrDiagLog.Print(
+			$"[VR intro] laser visible -> {visible} ({reason}) "
+			+ $"parent={_pointerLaser?.GetParent()?.Name ?? "null"} onCtrl={_pointerLaserOnController}");
 	}
 
 	static float _motionBlend = 1f;
@@ -2118,7 +2546,11 @@ public static partial class VrController
 			return;
 		}
 
-		playerdat.PositionPlayerCamera();
+		if (uimanager.InGame)
+		{
+			playerdat.PositionPlayerCamera();
+		}
+
 		SyncXrOriginFromGimbal();
 
 		var floorPos = GetAvatarFloorPos();
@@ -2133,45 +2565,43 @@ public static partial class VrController
 
 	static void ApplyRecenterInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror)
+		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null)
 		{
 			_recenterWasPressed = false;
 			return;
 		}
 
-		var pressed = IsButtonPressed(_rightController, RecenterButtonActions);
+		var pressed = IsButtonPressed(_rightController, RecenterStickClickActions);
 		if (pressed && !_recenterWasPressed)
 		{
 			SnapRoomOriginToAvatar();
-			GD.Print("[VR] View recentered (B button).");
+			VrDiagLog.Print("[VR] View recentered (right stick click).");
 		}
 
 		_recenterWasPressed = pressed;
 	}
 
-	static void ApplyQuitInput()
+	static void ApplySpellCastShortcutInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror)
+		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null
+			|| !uimanager.InGame || uimanager.blockinput || IsHudOnMenuScreen())
 		{
-			_quitWasPressed = false;
+			_spellCastShortcutWasPressed = false;
 			return;
 		}
 
-		// Quest X is left-hand ax_button (right-hand ax_button is A / jump).
-		var pressed = IsButtonPressed(_leftController, QuitButtonActions);
-		if (pressed && !_quitWasPressed)
+		var pressed = IsButtonPressed(_leftController, SpellCastShortcutActions);
+		if (pressed && !_spellCastShortcutWasPressed && playerdat.NoOfSelectedRunes > 0)
 		{
-			GD.Print("[VR] Quit requested (X button).");
-			VrCombatMotionLog.CloseSession();
-			_sceneTree?.Quit();
+			RunicMagic.CastRunicSpell();
 		}
 
-		_quitWasPressed = pressed;
+		_spellCastShortcutWasPressed = pressed;
 	}
 
 	/// <summary>
 	/// Head height from OpenXR; room-scale X/Z is left alone so you can lean/walk in the play space.
-	/// Press B to snap the view back onto the cyan avatar.
+	/// Press right stick click to snap the view back onto the cyan avatar.
 	/// </summary>
 	static void ApplyNativeXrTrackingPassthrough()
 	{
@@ -2184,7 +2614,7 @@ public static partial class VrController
 		{
 			var transform = _xrCamera.Transform;
 			var floorY = GetGameFloorY();
-			GD.Print($"[VR debug] passthrough localXZ=({transform.Origin.X:F3},{transform.Origin.Z:F3}) rawY={transform.Origin.Y:F3} worldEyeY={_xrCamera.GlobalPosition.Y:F3} floorY={floorY:F3}");
+			VrDiagLog.Print($"[VR debug] passthrough localXZ=({transform.Origin.X:F3},{transform.Origin.Z:F3}) rawY={transform.Origin.Y:F3} worldEyeY={_xrCamera.GlobalPosition.Y:F3} floorY={floorY:F3}");
 		}
 	}
 
@@ -2258,28 +2688,105 @@ public static partial class VrController
 
 		var flatCam = main.cameraPitchGimbal_world;
 
-		GD.Print($"[VR debug] ========== VR SETUP ({phase}) ==========");
-		GD.Print($"[VR debug] vr_mirror={uwsettings.instance.vr_mirror} openXrEnabled={_openXrOutputEnabled}");
-		GD.Print($"[VR debug] Root UseXR={rootViewport?.UseXR} VrsMode={rootViewport?.VrsMode}");
-		GD.Print($"[VR debug] SubViewport update={_gameViewport?.RenderTargetUpdateMode} size={_gameViewport?.Size}");
-		GD.Print($"[VR debug] Flat camera Current={flatCam?.Current} inTree={flatCam?.IsInsideTree()}");
-		GD.Print($"[VR debug] XROrigin inTree={_xrOrigin?.IsInsideTree()} path={_xrOrigin?.GetPath()}");
-		GD.Print($"[VR debug] XRCamera inTree={_xrCamera?.IsInsideTree()} path={_xrCamera?.GetPath()} Current={_xrCamera?.Current}");
-		GD.Print($"[VR debug] Mirror={_xrCamera?.GetNodeOrNull("VrMirrorScreen") != null}");
-		GD.Print("[VR debug] ========================================");
+		VrDiagLog.Print($"[VR debug] ========== VR SETUP ({phase}) ==========");
+		VrDiagLog.Print($"[VR debug] vr_mirror={uwsettings.instance.vr_mirror} openXrEnabled={_openXrOutputEnabled}");
+		VrDiagLog.Print($"[VR debug] Root UseXR={rootViewport?.UseXR} VrsMode={rootViewport?.VrsMode}");
+		VrDiagLog.Print($"[VR debug] SubViewport update={_gameViewport?.RenderTargetUpdateMode} size={_gameViewport?.Size}");
+		VrDiagLog.Print($"[VR debug] Flat camera Current={flatCam?.Current} inTree={flatCam?.IsInsideTree()}");
+		VrDiagLog.Print($"[VR debug] XROrigin inTree={_xrOrigin?.IsInsideTree()} path={_xrOrigin?.GetPath()}");
+		VrDiagLog.Print($"[VR debug] XRCamera inTree={_xrCamera?.IsInsideTree()} path={_xrCamera?.GetPath()} Current={_xrCamera?.Current}");
+		VrDiagLog.Print($"[VR debug] Mirror={_xrCamera?.GetNodeOrNull("VrMirrorScreen") != null}");
+		VrDiagLog.Print("[VR debug] ========================================");
 	}
 
 	static void LogVrRuntimeState()
 	{
 		var rootVp = _sceneTree?.Root?.GetViewport();
-		GD.Print($"[VR debug] frame={_debugFrameCounter} UseXR={rootVp?.UseXR} xrInTree={_xrCamera?.IsInsideTree()} flatCam={main.cameraPitchGimbal_world?.Current} xrCam={_xrCamera?.Current}");
+		VrDiagLog.Print($"[VR debug] frame={_debugFrameCounter} UseXR={rootVp?.UseXR} xrInTree={_xrCamera?.IsInsideTree()} flatCam={main.cameraPitchGimbal_world?.Current} xrCam={_xrCamera?.Current}");
+	}
+
+	static long _introDiagLastLogMsec;
+	static long _introDiagLastSnapshotMsec;
+	static bool _introDiagLastBodyMarkerVisible;
+	static string _introDiagLastLaserSkipReason = "";
+
+	static bool IntroDiagEnabled =>
+		uwsettings.instance.vr_diag_log
+		|| uwsettings.instance.vr_debug
+		|| uwsettings.instance.vr_intro_debug;
+
+	static void IntroDiagLog(string message, bool throttle = true)
+	{
+		if (!IntroDiagEnabled)
+		{
+			return;
+		}
+
+		if (throttle)
+		{
+			var now = (long)Time.GetTicksMsec();
+			if (now - _introDiagLastLogMsec < 3000)
+			{
+				return;
+			}
+
+			_introDiagLastLogMsec = now;
+		}
+
+		VrDiagLog.Print($"[VR intro] {message}");
+	}
+
+	static void IntroDiagLogOnce(ref string lastKey, string key, string message)
+	{
+		if (!IntroDiagEnabled || lastKey == key)
+		{
+			return;
+		}
+
+		lastKey = key;
+		VrDiagLog.Print($"[VR intro] {message}");
+	}
+
+	static void LogIntroDiagSnapshot(string reason, bool force = false)
+	{
+		if (!IntroDiagEnabled)
+		{
+			return;
+		}
+
+		var now = (long)Time.GetTicksMsec();
+		if (!force && now - _introDiagLastSnapshotMsec < 3000)
+		{
+			return;
+		}
+
+		_introDiagLastSnapshotMsec = now;
+
+		var hudParent = _hudPanel?.GetParent()?.Name ?? "null";
+		var laserLen = _pointerLaserMesh?.Height ?? 0f;
+		var laserVisible = _pointerLaser?.Visible == true;
+		var bodyVisible = _bodyMarker?.Visible == true;
+		var rightPos = _rightController?.GlobalPosition ?? Vector3.Zero;
+		var leftPos = _leftController?.GlobalPosition ?? Vector3.Zero;
+		VrDiagLog.Print(
+			$"[VR intro] snapshot ({reason}) "
+			+ $"active={IsActive} tickVr={ShouldTickVrInput()} mode={uimanager.CurrentGameMode} "
+			+ $"atMain={uimanager.AtMainMenu} inGame={uimanager.InGame} blockinput={uimanager.blockinput} "
+			+ $"menuTv={_vrUiOnMenuTv} onMenuScreen={IsHudOnMenuScreen()} needsMenuLaser={NeedsFrontMenuLaser()} "
+			+ $"headRay={UseHeadRayForMenuPointer()} "
+			+ $"hudPanel={_hudPanel != null} hudVp={_hudViewport != null} hudParent={hudParent} hudVis={_hudPanelVisible} "
+			+ $"pointerLaser={_pointerLaser != null} laserVis={laserVisible} laserLen={laserLen:F3} "
+			+ $"bodyShow={ShouldShowBodyMarker()} bodyVis={bodyVisible} "
+			+ $"rightCtrl={_rightController != null} leftCtrl={_leftController != null} "
+			+ $"rightPos=({rightPos.X:F2},{rightPos.Y:F2},{rightPos.Z:F2}) "
+			+ $"leftPos=({leftPos.X:F2},{leftPos.Y:F2},{leftPos.Z:F2})");
 	}
 
 	static void VrDebugLog(string phase, string message)
 	{
 		if (uwsettings.instance.vr_debug)
 		{
-			GD.Print($"[VR debug] {phase}: {message}");
+			VrDiagLog.Print($"[VR debug] {phase}: {message}");
 		}
 	}
 
@@ -2344,6 +2851,12 @@ public static partial class VrController
 		motion.SyncPlayerObjectHeadingFromCameraYaw(playerdat.playerObject);
 	}
 
+	public static XRController3D GetDominantController()
+		=> playerdat.isLefty ? _leftController : _rightController;
+
+	public static XRController3D GetOffHandController()
+		=> playerdat.isLefty ? _rightController : _leftController;
+
 	public static XRController3D GetWeaponHandController()
 	{
 		if (!IsActive)
@@ -2351,7 +2864,69 @@ public static partial class VrController
 			return null;
 		}
 
-		return playerdat.isLefty ? _leftController : _rightController;
+		return GetDominantController();
+	}
+
+	static XRController3D GetHudHandController() => GetOffHandController();
+
+	static XRController3D GetAimController() => GetDominantController();
+
+	static Vector3 GetAimRayOrigin()
+	{
+		var controller = GetAimController();
+		return controller?.GlobalPosition ?? GetAvatarBodyCenter();
+	}
+
+	static bool IsVrInCombat() =>
+		uimanager.InGame
+		&& uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack
+		&& playerdat.play_drawn == 1;
+
+	static bool ShouldOfferVrEscapeGrip()
+	{
+		if (MessageDisplay.WaitingForYesOrNo || MessageDisplay.WaitingForTypedInput)
+		{
+			return true;
+		}
+
+		if (uimanager.blockinput)
+		{
+			return true;
+		}
+
+		switch (uimanager.CurrentGameMode)
+		{
+			case uimanager.GameModes.CUTSCENE:
+			case uimanager.GameModes.MAIN:
+			case uimanager.GameModes.CHARGEN:
+			case uimanager.GameModes.JOURNEY:
+				return true;
+		}
+
+		return false;
+	}
+
+	static Vector3 GetHudPanelLocalPosition()
+	{
+		if (playerdat.isLefty)
+		{
+			return HudPanelLocalPosition;
+		}
+
+		return new Vector3(-HudPanelLocalPosition.X, HudPanelLocalPosition.Y, HudPanelLocalPosition.Z);
+	}
+
+	static Vector3 GetHudPanelLocalRotationDegrees()
+	{
+		if (playerdat.isLefty)
+		{
+			return HudPanelLocalRotationDegrees;
+		}
+
+		return new Vector3(
+			HudPanelLocalRotationDegrees.X,
+			-HudPanelLocalRotationDegrees.Y,
+			HudPanelLocalRotationDegrees.Z);
 	}
 
 	public static Vector3 WorldToTorsoLocal(Vector3 worldPos)
@@ -2627,6 +3202,11 @@ public static partial class VrController
 
 	public static void UpdateVisionFromHead(short tileX, short tileY, short yaw)
 	{
+		if (!uimanager.InGame)
+		{
+			return;
+		}
+
 		var x = (short)(tileX & 0xFF);
 		var y = (short)(tileY & 0xFF);
 
@@ -2679,6 +3259,7 @@ public static partial class VrController
 		{
 			Name = "VrBodyMarker",
 			Scale = Vector3.One * BodyMarkerScale,
+			Visible = false,
 			// XR camera culls LayerGeo|LayerXFER; default layer 1 is invisible in native VR.
 			Layers = main.LayerGeo | main.LayerXFER,
 		};
@@ -2693,7 +3274,8 @@ public static partial class VrController
 		_bodyMarker.Mesh = new CapsuleMesh();
 		_bodyMarker.MaterialOverride = mat;
 		underworld.AddChild(_bodyMarker);
-		GD.Print("[VR] Body marker created.");
+		UpdateBodyMarker();
+		VrDiagLog.Print("[VR] Body marker created.");
 	}
 
 	static void UpdateBodyMarker()
@@ -2703,8 +3285,16 @@ public static partial class VrController
 			return;
 		}
 
-		var show = IsActive && !uwsettings.instance.vr_mirror && uwsettings.instance.vr_show_body
-			&& uimanager.InGame && !UsesFrontMenuScreen;
+		var show = ShouldShowBodyMarker();
+		if (show != _introDiagLastBodyMarkerVisible)
+		{
+			_introDiagLastBodyMarkerVisible = show;
+			IntroDiagLog(
+				$"body marker visible -> {show} (mode={uimanager.CurrentGameMode} inGame={uimanager.InGame} "
+				+ $"atMain={uimanager.AtMainMenu} menuTv={IsHudOnMenuScreen()} vr_show_body={uwsettings.instance.vr_show_body})",
+				throttle: false);
+		}
+
 		_bodyMarker.Visible = show;
 		if (!show)
 		{
@@ -2729,6 +3319,20 @@ public static partial class VrController
 		_bodyMarker.GlobalPosition = GetAvatarBodyCenter();
 		var bodyYaw = (float)(-((float)playerdat.PlayerCameraYaw_dseg_8294 / 32767f) * Math.PI);
 		_bodyMarker.Rotation = new Vector3(0f, bodyYaw, 0f);
+	}
+
+	static bool ShouldShowBodyMarker()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || !uwsettings.instance.vr_show_body)
+		{
+			return false;
+		}
+
+		// Only during live gameplay — hide on intro/menu/chargen, cutscenes, and the menu TV.
+		return uimanager.InGame
+			&& uimanager.CurrentGameMode == uimanager.GameModes.GAME
+			&& !uimanager.AtMainMenu
+			&& !IsHudOnMenuScreen();
 	}
 
 	static void SyncVrObjectInfoCamera()
@@ -2756,14 +3360,15 @@ public static partial class VrController
 
 	static void ApplyNumberPadPointerInput()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null)
+		var aimController = GetAimController();
+		if (!IsActive || uwsettings.instance.vr_mirror || aimController == null)
 		{
 			_numberPadLeftWasPressed = false;
 			_lastNumberPadPointerPos = new Vector2(-1f, -1f);
 			return;
 		}
 
-		var rayOrigin = _rightController.GlobalPosition;
+		var rayOrigin = GetAimRayOrigin();
 		var rayDir = GetControllerRayDir();
 		var hovering = VrNumberPad.TryGetHit(
 			rayOrigin,
@@ -2787,7 +3392,7 @@ public static partial class VrController
 			_lastNumberPadPointerPos = new Vector2(-1f, -1f);
 		}
 
-		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+		var leftPressed = IsHudPointerLeftClickHeld(menuScreen: false);
 		if (hovering && leftPressed && !_numberPadLeftWasPressed)
 		{
 			VrNumberPad.PushMouseClick(viewportPos, MouseButton.Left);
@@ -2801,86 +3406,212 @@ public static partial class VrController
 		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null
 			|| !uimanager.InGame || uimanager.blockinput || IsHudOnMenuScreen())
 		{
-			_combatGripWasPressed = false;
+			_combatToggleWasPressed = false;
 			return;
 		}
 
 		if ((_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering)
 		{
-			_combatGripWasPressed = IsButtonPressed(_rightController, HudRightClickActions);
+			_combatToggleWasPressed = IsButtonPressed(_rightController, RecenterButtonActions);
 			return;
 		}
 
-		var pressed = IsButtonPressed(_rightController, HudRightClickActions);
-		if (pressed && !_combatGripWasPressed)
+		var pressed = IsButtonPressed(_rightController, RecenterButtonActions);
+		if (pressed && !_combatToggleWasPressed)
 		{
 			uimanager.ToggleVrCombatMode();
 		}
 
-		_combatGripWasPressed = pressed;
+		_combatToggleWasPressed = pressed;
 	}
 
-	static void ApplyWorldPointerInput()
+	static void ApplySpellTargetingInput()
 	{
 		IsVrWorldPointerActive = false;
 		IsVrWorldRightHeld = false;
 
-		if (!IsActive || uwsettings.instance.vr_mirror || _rightController == null || _xrCamera == null)
+		var dominant = GetDominantController();
+		if (!IsActive || uwsettings.instance.vr_mirror || dominant == null || _xrCamera == null)
 		{
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
+			ResetSpellTargetingPressState();
 			return;
 		}
 
-		if (IsHudOnMenuScreen() || !uimanager.InGame)
+		if (IsHudOnMenuScreen() || !uimanager.InGame || uimanager.blockinput)
 		{
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
-			return;
-		}
-
-		// Menus/conversations use the HUD laser only — don't raycast into the world.
-		if (uimanager.blockinput)
-		{
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
+			ResetSpellTargetingPressState();
 			return;
 		}
 
 		if ((_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering)
 		{
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
+			ResetSpellTargetingPressState();
 			return;
 		}
 
-		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack)
-		{
-			_worldPointerLeftWasPressed = false;
-			_worldPointerRightWasPressed = false;
-			return;
-		}
-
-		var rayOrigin = _rightController.GlobalPosition;
+		var rayOrigin = GetAimRayOrigin();
 		var rayDir = GetControllerRayDir();
-
-		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
-
 		IsVrWorldPointerActive = true;
 		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
 
-		var leftPressedInteract = IsButtonPressed(_rightController, HudLeftClickActions);
-		if (leftPressedInteract && !_worldPointerLeftWasPressed)
+		var triggerPressed = IsButtonPressed(dominant, HudLeftClickActions);
+		if (triggerPressed && !_spellCastTriggerWasPressed)
 		{
-			TryInteractLaserPick(rayOrigin, rayDir, leftClick: true);
+			TryInteractLaserVerb(rayOrigin, rayDir, uimanager.InteractionModes.ModeUse);
 		}
-		_worldPointerLeftWasPressed = leftPressedInteract;
 
-		if (rightPressed && !_worldPointerRightWasPressed)
+		_spellCastTriggerWasPressed = triggerPressed;
+
+		var gripPressed = IsButtonPressed(dominant, HudRightClickActions);
+		if (gripPressed && !_spellCastGripWasPressed)
 		{
-			TryInteractLaserPick(rayOrigin, rayDir, leftClick: false);
+			CancelArmedSpell();
 		}
-		_worldPointerRightWasPressed = rightPressed;
+
+		_spellCastGripWasPressed = gripPressed;
+	}
+
+	static void ApplyExplorationVerbInput()
+	{
+		IsVrWorldPointerActive = false;
+		IsVrWorldRightHeld = false;
+
+		var dominant = GetDominantController();
+		var offHand = GetOffHandController();
+		if (!IsActive || uwsettings.instance.vr_mirror || dominant == null || offHand == null || _xrCamera == null)
+		{
+			ResetExplorationVerbPressState();
+			return;
+		}
+
+		if (IsHudOnMenuScreen() || !uimanager.InGame || uimanager.blockinput)
+		{
+			ResetExplorationVerbPressState();
+			return;
+		}
+
+		if ((_hudPanelVisible && _hudPointerHovering) || _statusOverlayHovering)
+		{
+			ResetExplorationVerbPressState();
+			return;
+		}
+
+		var rayOrigin = GetAimRayOrigin();
+		var rayDir = GetControllerRayDir();
+		IsVrWorldPointerActive = true;
+		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
+
+		if (playerdat.ObjectInHand != -1)
+		{
+			ApplyHeldObjectVerbInput(dominant, rayOrigin, rayDir);
+			_offHandGripWasPressed = IsButtonPressed(offHand, HudRightClickActions);
+			_offHandTriggerWasPressed = IsButtonPressed(offHand, HudLeftClickActions);
+			return;
+		}
+
+		if (IsVrInCombat())
+		{
+			if (TryConsumeCombatBlockedVerbPress(dominant, offHand))
+			{
+				ResetExplorationVerbPressState();
+				return;
+			}
+		}
+
+		TryVerbButtonEdge(dominant, HudRightClickActions, ref _dominantGripWasPressed,
+			uimanager.InteractionModes.ModePickup, rayOrigin, rayDir);
+		TryVerbButtonEdge(dominant, HudLeftClickActions, ref _dominantTriggerWasPressed,
+			uimanager.InteractionModes.ModeUse, rayOrigin, rayDir);
+		TryVerbButtonEdge(offHand, HudLeftClickActions, ref _offHandTriggerWasPressed,
+			uimanager.InteractionModes.ModeLook, rayOrigin, rayDir);
+		TryVerbButtonEdge(offHand, HudRightClickActions, ref _offHandGripWasPressed,
+			uimanager.InteractionModes.ModeTalk, rayOrigin, rayDir);
+	}
+
+	static void ApplyHeldObjectVerbInput(XRController3D dominant, Vector3 rayOrigin, Vector3 rayDir)
+	{
+		var gripPressed = IsButtonPressed(dominant, HudRightClickActions);
+		if (gripPressed && !_dominantGripWasPressed)
+		{
+			TryThrowHeldObject(rayOrigin, rayDir);
+		}
+
+		_dominantGripWasPressed = gripPressed;
+
+		var triggerPressed = IsButtonPressed(dominant, HudLeftClickActions);
+		if (triggerPressed && !_dominantTriggerWasPressed)
+		{
+			TryInteractLaserVerb(rayOrigin, rayDir, uimanager.InteractionModes.ModeUse);
+		}
+
+		_dominantTriggerWasPressed = triggerPressed;
+	}
+
+	static bool TryConsumeCombatBlockedVerbPress(XRController3D dominant, XRController3D offHand)
+	{
+		var anyPressed =
+			(IsButtonPressed(dominant, HudRightClickActions) && !_dominantGripWasPressed)
+			|| (IsButtonPressed(dominant, HudLeftClickActions) && !_dominantTriggerWasPressed)
+			|| (IsButtonPressed(offHand, HudLeftClickActions) && !_offHandTriggerWasPressed)
+			|| (IsButtonPressed(offHand, HudRightClickActions) && !_offHandGripWasPressed);
+
+		_dominantGripWasPressed = IsButtonPressed(dominant, HudRightClickActions);
+		_dominantTriggerWasPressed = IsButtonPressed(dominant, HudLeftClickActions);
+		_offHandTriggerWasPressed = IsButtonPressed(offHand, HudLeftClickActions);
+		_offHandGripWasPressed = IsButtonPressed(offHand, HudRightClickActions);
+		return anyPressed;
+	}
+
+	static void TryVerbButtonEdge(
+		XRController3D controller,
+		StringName[] actions,
+		ref bool wasPressed,
+		uimanager.InteractionModes verb,
+		Vector3 rayOrigin,
+		Vector3 rayDir)
+	{
+		if (controller == GetOffHandController()
+			&& controller == _leftController
+			&& ShouldOfferVrEscapeGrip()
+			&& IsButtonPressed(controller, HudRightClickActions))
+		{
+			wasPressed = true;
+			return;
+		}
+
+		var pressed = IsButtonPressed(controller, actions);
+		if (pressed && !wasPressed && !IsVrInCombat())
+		{
+			TryInteractLaserVerb(rayOrigin, rayDir, verb);
+		}
+
+		wasPressed = pressed;
+	}
+
+	static void ResetExplorationVerbPressState()
+	{
+		_dominantGripWasPressed = false;
+		_dominantTriggerWasPressed = false;
+		_offHandGripWasPressed = false;
+		_offHandTriggerWasPressed = false;
+	}
+
+	static void ResetSpellTargetingPressState()
+	{
+		_spellCastTriggerWasPressed = false;
+		_spellCastGripWasPressed = false;
+	}
+
+	static void CancelArmedSpell()
+	{
+		SpellCasting.currentSpell = null;
+		for (var i = 0; i < 3; i++)
+		{
+			playerdat.SetSelectedRune(i, 24);
+		}
+
+		playerdat.NoOfSelectedRunes = 0;
+		uimanager.RedrawSelectedRuneSlots();
 	}
 
 	static void UpdateViewPortMouseFromControllerAim(Vector3 rayDir)
@@ -2935,7 +3666,7 @@ public static partial class VrController
 
 		_vrHeldObjectIndex = objectIndex;
 		_vrHeldRayDistance = Mathf.Clamp(rayDistance, 0.15f, GetMaxReachAlongRay(
-			_rightController?.GlobalPosition ?? GetAvatarBodyCenter(),
+			GetAimRayOrigin(),
 			GetControllerRayDir()));
 	}
 
@@ -2995,7 +3726,7 @@ public static partial class VrController
 			}
 		}
 
-		if (_rightController == null)
+		if (GetAimController() == null)
 		{
 			return;
 		}
@@ -3027,8 +3758,8 @@ public static partial class VrController
 			return;
 		}
 
-		var rayOrigin = _rightController.GlobalPosition;
-		var rayDir = GetControllerRayDir().Normalized();
+		var rayOrigin = GetAimRayOrigin();
+		var rayDir = GetControllerRayDir();
 		var holdPos = rayOrigin + rayDir * _vrHeldRayDistance;
 		node.Visible = true;
 		node.GlobalPosition = holdPos;
@@ -3038,9 +3769,9 @@ public static partial class VrController
 		}
 	}
 
-	static float GetCanReachWorldRadius()
+	static float GetCanReachWorldRadius(uimanager.InteractionModes mode)
 	{
-		var threshold = uimanager.InteractionMode == uimanager.InteractionModes.ModePickup
+		var threshold = mode == uimanager.InteractionModes.ModePickup
 			? playerdat.PickupDistance
 			: playerdat.UseDistance;
 		if (threshold <= 0)
@@ -3054,9 +3785,9 @@ public static partial class VrController
 		return Mathf.Sqrt(threshold) * (tileMapRender.TileWidth / 8f);
 	}
 
-	static float GetInteractRayDistance()
+	static float GetInteractRayDistance(uimanager.InteractionModes mode)
 	{
-		switch (uimanager.InteractionMode)
+		switch (mode)
 		{
 			case uimanager.InteractionModes.ModeLook:
 				return GetLookVisionWorldDistance();
@@ -3065,9 +3796,11 @@ public static partial class VrController
 			case uimanager.InteractionModes.ModeAttack:
 				return uimanager.RayDistance > 0f ? uimanager.RayDistance : 1f;
 			default:
-				return GetCanReachWorldRadius();
+				return GetCanReachWorldRadius(mode);
 		}
 	}
+
+	static float GetInteractRayDistance() => GetInteractRayDistance(uimanager.InteractionMode);
 
 	/// <summary>Avatar torso center — same anchor as the cyan body marker.</summary>
 	static Vector3 GetAvatarBodyCenter()
@@ -3129,27 +3862,26 @@ public static partial class VrController
 
 	static void UpdateVrGameplayPointerLaser()
 	{
-		if (_rightController == null)
+		// Menu/HUD/number-pad lasers are drawn by their own input handlers.
+		if (HudPointerOwnsLaser())
 		{
 			return;
 		}
 
-		if (!ShouldShowVrGameplayPointerLaser() || VrNumberPad.IsVisible)
+		var aimController = GetAimController();
+		if (aimController == null)
 		{
-			if (!VrNumberPad.IsVisible)
-			{
-				UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
-			}
-
 			return;
 		}
 
-		var rayOrigin = _rightController.GlobalPosition;
+		if (!ShouldShowVrGameplayPointerLaser())
+		{
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			return;
+		}
+
+		var rayOrigin = GetAimRayOrigin();
 		var rayDir = GetControllerRayDir();
-		if (ShouldUseHudMenuPointerOnly() || IsHudOnMenuScreen() || (_hudPanelVisible && _hudPointerHovering))
-		{
-			return;
-		}
 
 		if (_statusOverlayHovering)
 		{
@@ -3157,7 +3889,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (!uimanager.InGame || uimanager.blockinput)
+		if (!uimanager.InGame || (uimanager.blockinput && SpellCasting.currentSpell == null))
 		{
 			return;
 		}
@@ -3165,7 +3897,26 @@ public static partial class VrController
 		UpdateGameplayPointerLaser(rayOrigin, rayDir);
 	}
 
-	static void TryInteractLaserPick(Vector3 rayOrigin, Vector3 rayDir, bool leftClick)
+	static void TryThrowHeldObject(Vector3 rayOrigin, Vector3 rayDir)
+	{
+		if (playerdat.ObjectInHand == -1)
+		{
+			return;
+		}
+
+		rayDir = rayDir.Normalized();
+		var objToThrow = UWTileMap.current_tilemap.LevelObjects[playerdat.ObjectInHand];
+		var itemid = objToThrow.item_id;
+		if (pickup.DropObjectByPlayer(objToThrow, true, rayDir))
+		{
+			playerdat.ObjectInHand = -1;
+			ClearHeldObjectVisual();
+			uimanager.instance.mousecursor.SetCursorToCursor();
+			pickup.DropSpecialCases(itemid);
+		}
+	}
+
+	static void TryInteractLaserVerb(Vector3 rayOrigin, Vector3 rayDir, uimanager.InteractionModes verb)
 	{
 		if (!uimanager.InGame)
 		{
@@ -3181,22 +3932,12 @@ public static partial class VrController
 			}
 		}
 
-		if (playerdat.ObjectInHand != -1)
+		if (playerdat.ObjectInHand != -1 && verb != uimanager.InteractionModes.ModeUse)
 		{
-			var objToThrow = UWTileMap.current_tilemap.LevelObjects[playerdat.ObjectInHand];
-			var itemid = objToThrow.item_id;
-			if (pickup.DropObjectByPlayer(objToThrow, true, rayDir))
-			{
-				playerdat.ObjectInHand = -1;
-				ClearHeldObjectVisual();
-				uimanager.instance.mousecursor.SetCursorToCursor();
-				pickup.DropSpecialCases(itemid);
-			}
-
 			return;
 		}
 
-		if (IsActive && uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+		if (verb == uimanager.InteractionModes.ModeLook)
 		{
 			UpdateVisionFromHead(
 				(short)playerdat.playerObject.tileX,
@@ -3205,7 +3946,7 @@ public static partial class VrController
 		}
 
 		rayDir = rayDir.Normalized();
-		var maxDist = GetMaxReachAlongRay(rayOrigin, rayDir);
+		var maxDist = GetMaxReachAlongRay(rayOrigin, rayDir, GetInteractRayDistance(verb));
 		var bestT = maxDist;
 		var bestObjectIndex = 0;
 		var bestTileFace = 0;
@@ -3249,14 +3990,14 @@ public static partial class VrController
 		{
 			case LaserPickKind.Object:
 				_pendingPickupRayDistance = bestT;
-				InteractWithLaserObject(bestObjectIndex, leftClick, rayOrigin + rayDir * bestT);
+				InteractWithLaserObject(bestObjectIndex, verb, rayOrigin + rayDir * bestT);
 				return;
 			case LaserPickKind.Tile:
-				InteractWithLaserTile(bestTileFace, bestTileX, bestTileY, bestTileHitPos, leftClick);
+				InteractWithLaserTile(bestTileFace, bestTileX, bestTileY, bestTileHitPos, verb);
 				return;
 		}
 
-		if (leftClick && uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+		if (verb == uimanager.InteractionModes.ModeLook)
 		{
 			SayYouSeeNothing();
 		}
@@ -3292,7 +4033,7 @@ public static partial class VrController
 		return origin.DistanceTo(hitPos) <= GetLookVisionWorldDistance() + 0.05f;
 	}
 
-	static void InteractWithLaserObject(int index, bool leftClick, Vector3 hitPos)
+	static void InteractWithLaserObject(int index, uimanager.InteractionModes verb, Vector3 hitPos)
 	{
 		var objList = UWTileMap.current_tilemap?.LevelObjects;
 		if (objList == null || index <= 0 || index >= objList.Length)
@@ -3300,7 +4041,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeLook
+		if (verb == uimanager.InteractionModes.ModeLook
 			&& !IsWithinLookRange(hitPos))
 		{
 			SayYouSeeNothing();
@@ -3313,14 +4054,14 @@ public static partial class VrController
 			return;
 		}
 
-		uimanager.InteractWithObjectCollider(index, leftClick);
+		uimanager.PerformVrObjectInteraction(index, verb);
 	}
 
-	static void InteractWithLaserTile(int face, int tileX, int tileY, Vector3 hitPos, bool leftClick)
+	static void InteractWithLaserTile(int face, int tileX, int tileY, Vector3 hitPos, uimanager.InteractionModes verb)
 	{
 		if (!UWTileMap.ValidTile(tileX, tileY))
 		{
-			if (leftClick && uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+			if (verb == uimanager.InteractionModes.ModeLook)
 			{
 				SayYouSeeNothing();
 			}
@@ -3328,7 +4069,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (uimanager.InteractionMode == uimanager.InteractionModes.ModeLook)
+		if (verb == uimanager.InteractionModes.ModeLook)
 		{
 			if (!IsWithinLookRange(hitPos))
 			{
@@ -3342,7 +4083,7 @@ public static partial class VrController
 
 		if (SpellCasting.currentSpell != null)
 		{
-			TryObjectInfoAtWorldPoint(hitPos, leftClick);
+			TryObjectInfoAtWorldPoint(hitPos, leftClick: true);
 		}
 	}
 
@@ -3762,16 +4503,7 @@ public static partial class VrController
 		return true;
 	}
 
-	static Vector3 GetControllerRayDir()
-	{
-		var rayDir = -_rightController.GlobalTransform.Basis.Z;
-		if (rayDir.LengthSquared() < 0.0001f)
-		{
-			rayDir = -_rightController.GlobalTransform.Basis.Y;
-		}
-
-		return rayDir.Normalized();
-	}
+	static Vector3 GetControllerRayDir() => GetRayDirFromController(GetAimController());
 
 	static bool TryUnprojectToObjectInfoPixel(Vector3 worldPoint, out Vector2 texPixel)
 	{
@@ -3806,8 +4538,29 @@ public static partial class VrController
 		IsHud3DViewportHovering = false;
 		IsHud3DViewportRightHeld = false;
 
-		if (!IsActive || uwsettings.instance.vr_mirror || _hudViewport == null || _hudPanel == null || _rightController == null)
+		if (!uwsettings.instance.vr)
 		{
+			IntroDiagLogOnce(ref _introDiagLastLaserSkipReason, "hud-ptr-vr-off", "ApplyHudPointerInput: vr disabled.");
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			return;
+		}
+
+		var needsMenuTv = IsHudOnMenuScreen() || NeedsFrontMenuLaser();
+		if (needsMenuTv)
+		{
+			TryEnsureMenuTvScreen();
+		}
+
+		var menuScreen = IsHudOnMenuScreen() || (NeedsFrontMenuLaser() && _hudPanel != null);
+		var menuPointer = GetMenuPointerController();
+
+		if (uwsettings.instance.vr_mirror || _hudViewport == null)
+		{
+			IntroDiagLog(
+				$"ApplyHudPointerInput bail: mirror={uwsettings.instance.vr_mirror} hudVp={_hudViewport != null} "
+				+ $"hudPanel={_hudPanel != null} menuPtr={menuPointer != null} menuScreen={menuScreen}");
 			_hudPointerHovering = false;
 			_hudPointerLeftWasPressed = false;
 			_hudPointerRightWasPressed = false;
@@ -3815,12 +4568,55 @@ public static partial class VrController
 			{
 				_hudMouseLayer.Visible = false;
 			}
+
+			if (!menuScreen)
+			{
+				UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			}
+
+			return;
+		}
+
+		if (menuScreen)
+		{
+			ApplyMenuTvPointerInput();
+			return;
+		}
+
+		if (_hudPanel == null)
+		{
+			IntroDiagLog(
+				$"ApplyHudPointerInput bail: hand HUD missing panel hudVp={_hudViewport != null} menuPtr={menuPointer != null}");
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			if (_hudMouseLayer != null)
+			{
+				_hudMouseLayer.Visible = false;
+			}
+
 			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
 			return;
 		}
 
-		var menuScreen = IsHudOnMenuScreen();
-		if (!menuScreen && !_hudPanelVisible)
+		if (_headOverlaysVisible && _statusOverlayHovering)
+		{
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			return;
+		}
+
+		if (menuPointer == null)
+		{
+			_hudPointerHovering = false;
+			_hudPointerLeftWasPressed = false;
+			_hudPointerRightWasPressed = false;
+			UpdatePointerLaser(Vector3.Zero, Vector3.Zero, false);
+			return;
+		}
+
+		if (!_hudPanelVisible)
 		{
 			if (ShouldUseHudMenuPointerOnly())
 			{
@@ -3840,16 +4636,16 @@ public static partial class VrController
 			}
 		}
 
-		var rayOrigin = _rightController.GlobalPosition;
-		var rayDir = GetControllerRayDir();
+		GetHudPointerRay(menuScreen: false, out var rayOrigin, out var rayDir);
 		var menuOnly = ShouldUseHudMenuPointerOnly();
-		var pointerMaxDistance = menuScreen ? MenuTvPointerMaxDistance : HudPointerMaxDistance;
+		var pointerMaxDistance = HudPointerMaxDistance;
 		var hovering = TryGetHudPanelHit(rayOrigin, rayDir, pointerMaxDistance, out var viewportPos, out var hitWorld);
 
 		if (menuOnly && !hovering)
 		{
-			// Don't extend the laser into the world during conversations/menus.
-			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * 0.2f, visible: true);
+			var laserDistance = 0.2f;
+			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * laserDistance, visible: true);
+
 			_hudPointerHovering = false;
 			_hudPointerLeftWasPressed = false;
 			_hudPointerRightWasPressed = false;
@@ -3867,13 +4663,14 @@ public static partial class VrController
 		{
 			UpdatePointerLaser(rayOrigin, hitWorld, visible: true);
 		}
-		else if (menuScreen)
+		else
 		{
 			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * pointerMaxDistance, visible: true);
 		}
 
 		if (hovering)
 		{
+			EnsureHudMouseLayer();
 			if (_hudMouseLayer != null)
 			{
 				_hudMouseLayer.Visible = true;
@@ -3904,9 +4701,9 @@ public static partial class VrController
 			return;
 		}
 
-		if (menuOnly || menuScreen)
+		if (menuOnly)
 		{
-			ApplyHudMenuPointerClicks(viewportPos);
+			ApplyHudMenuPointerClicks(viewportPos, menuScreen: false);
 			return;
 		}
 
@@ -3916,7 +4713,7 @@ public static partial class VrController
 			IsHud3DViewportHovering = true;
 			uimanager.SetViewPortMouseFromUwLocal(uwLocal);
 
-			var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+			var leftPressed = IsHudPointerLeftClickHeld(menuScreen: false);
 			if (leftPressed && !_hudPointerLeftWasPressed)
 			{
 				SyncVrObjectInfoCamera();
@@ -3924,7 +4721,7 @@ public static partial class VrController
 			}
 			_hudPointerLeftWasPressed = leftPressed;
 
-			var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+			var rightPressed = IsHudPointerRightClickHeld(menuScreen: false);
 			if (rightPressed && !_hudPointerRightWasPressed
 				&& uimanager.InteractionMode != uimanager.InteractionModes.ModeAttack)
 			{
@@ -3935,25 +4732,25 @@ public static partial class VrController
 		}
 		else
 		{
-			ApplyHudMenuPointerClicks(viewportPos);
+			ApplyHudMenuPointerClicks(viewportPos, menuScreen: false);
 		}
 	}
 
-	static void ApplyHudMenuPointerClicks(Vector2 viewportPos)
+	static void ApplyHudMenuPointerClicks(Vector2 viewportPos, bool menuScreen)
 	{
-		var leftPressed = IsButtonPressed(_rightController, HudLeftClickActions);
+		var leftPressed = IsHudPointerLeftClickHeld(menuScreen);
 		if (leftPressed && !_hudPointerLeftWasPressed)
 		{
 			if (!TryDismissMessageMore()
 				&& !TryConfirmYesNoPrompt(viewportPos, yes: true)
 				&& !TrySelectConversationOption(viewportPos))
 			{
-				PushHudMouseClick(viewportPos, MouseButton.Left);
+				PushVrHudMouseClick(viewportPos, MouseButton.Left);
 			}
 		}
 		_hudPointerLeftWasPressed = leftPressed;
 
-		var rightPressed = IsButtonPressed(_rightController, HudRightClickActions);
+		var rightPressed = IsHudPointerRightClickHeld(menuScreen);
 		if (rightPressed && !_hudPointerRightWasPressed)
 		{
 			if (!TryDismissMessageMore()
@@ -4108,16 +4905,31 @@ public static partial class VrController
 		return true;
 	}
 
-	static void UpdatePointerLaser(Vector3 from, Vector3 to, bool visible)
+	static void UpdatePointerLaser(Vector3 from, Vector3 to, bool visible, bool localSpace = false)
 	{
 		if (_pointerLaser == null || _pointerLaserMesh == null)
 		{
+			if (visible && NeedsFrontMenuLaser())
+			{
+				IntroDiagLog("UpdatePointerLaser: _pointerLaser mesh missing while menu laser requested.");
+			}
+
 			return;
+		}
+
+		if (localSpace)
+		{
+			_pointerLaser.TopLevel = false;
+		}
+		else if (_pointerLaserOnController || _pointerLaserOnCamera)
+		{
+			ReparentPointerLaserTo(_pointerLaserWorldParent, onCamera: false, PointerLaserRadius);
 		}
 
 		_pointerLaser.Visible = visible;
 		if (!visible)
 		{
+			LogLaserVisibilityIfChanged(false, "hidden");
 			return;
 		}
 
@@ -4126,13 +4938,27 @@ public static partial class VrController
 		if (length < 0.005f)
 		{
 			_pointerLaser.Visible = false;
+			LogLaserVisibilityIfChanged(false, $"beam too short ({length:F4}m)");
+			IntroDiagLog($"UpdatePointerLaser: beam too short ({length:F4}m) from=({from.X:F2},{from.Y:F2},{from.Z:F2}) to=({to.X:F2},{to.Y:F2},{to.Z:F2})");
 			return;
 		}
 
 		var direction = delta / length;
 		_pointerLaserMesh.Height = length;
-		_pointerLaser.GlobalPosition = from + direction * (length * 0.5f);
-		_pointerLaser.GlobalBasis = BasisWithYAxis(direction);
+		if (localSpace)
+		{
+			_pointerLaser.TopLevel = false;
+			_pointerLaser.Position = from + direction * (length * 0.5f);
+			_pointerLaser.Basis = BasisWithYAxis(direction);
+			LogLaserVisibilityIfChanged(true, "controller-local");
+		}
+		else
+		{
+			_pointerLaser.TopLevel = true;
+			_pointerLaser.GlobalPosition = from + direction * (length * 0.5f);
+			_pointerLaser.GlobalBasis = BasisWithYAxis(direction);
+			LogLaserVisibilityIfChanged(true, "world");
+		}
 	}
 
 	/// <summary>CylinderMesh extends along local Y; align Y with <paramref name="axisY"/>.</summary>
@@ -4167,6 +4993,26 @@ public static partial class VrController
 		PushHudMouseButton(viewportPos, button, pressed: false);
 	}
 
+	/// <summary>
+	/// VR HUD click: DOS empty-slot placement only runs in ModePickup, but VR verbs do not toggle HUD modes.
+	/// </summary>
+	static void PushVrHudMouseClick(Vector2 viewportPos, MouseButton button)
+	{
+		if (uwsettings.instance.vr
+			&& button == MouseButton.Left
+			&& playerdat.ObjectInHand != -1
+			&& GetInventoryHudRectFixed().HasPoint(viewportPos))
+		{
+			var previous = uimanager.InteractionMode;
+			uimanager.InteractionMode = uimanager.InteractionModes.ModePickup;
+			PushHudMouseClick(viewportPos, button);
+			uimanager.InteractionMode = previous;
+			return;
+		}
+
+		PushHudMouseClick(viewportPos, button);
+	}
+
 	static void PushHudMouseButton(Vector2 viewportPos, MouseButton button, bool pressed)
 	{
 		_hudViewport.WarpMouse(viewportPos);
@@ -4178,191 +5024,6 @@ public static partial class VrController
 			GlobalPosition = viewportPos,
 		};
 		_hudViewport.PushInput(mouseButton);
-	}
-
-	static void ApplyDoorInteraction()
-	{
-		if (!IsActive || playerdat.ParalyseTimer > 0 || !uimanager.InGame || uimanager.blockinput
-			|| IsHudOnMenuScreen() || uimanager.AtMainMenu
-			|| uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE)
-		{
-			_doorUseWasPressed = false;
-			return;
-		}
-
-		var pressed = IsButtonPressed(_leftController, DoorUseButtonActions);
-		if (pressed && !_doorUseWasPressed && _doorUseCooldown <= 0f)
-		{
-			// Right trigger/grip on the HUD panel are reserved for UI clicks.
-			if ((_hudPointerHovering && _hudPanelVisible &&
-				(IsButtonPressed(_rightController, HudLeftClickActions) ||
-				 IsButtonPressed(_rightController, HudRightClickActions)))
-				|| (_statusOverlayHovering &&
-					(IsButtonPressed(_rightController, HudLeftClickActions) ||
-					 IsButtonPressed(_rightController, HudRightClickActions)))
-				|| IsHud3DViewportRightHeld
-				|| IsVrWorldRightHeld)
-			{
-				_doorUseWasPressed = pressed;
-				return;
-			}
-
-			var target = FindTargetDoor();
-			if (target != null)
-			{
-				door.VrUse(target);
-				_doorUseCooldown = DoorUseCooldownSeconds;
-			}
-		}
-
-		_doorUseWasPressed = pressed;
-	}
-
-	static uwObject FindTargetDoor()
-	{
-		var fromRay = TryRaycastDoor();
-		if (fromRay != null)
-		{
-			return fromRay;
-		}
-
-		return FindNearestDoorInTiles();
-	}
-
-	static uwObject TryRaycastDoor()
-	{
-		if (_xrCamera == null || _gameRoot == null)
-		{
-			return null;
-		}
-
-		var maxDistance = 3f * tileMapRender.TileWidth;
-		var from = _xrCamera.GlobalPosition;
-		var to = from + (-_xrCamera.GlobalTransform.Basis.Z) * maxDistance;
-		var query = PhysicsRayQueryParameters3D.Create(from, to);
-		query.CollideWithAreas = false;
-		var result = _gameRoot.GetWorld3D().DirectSpaceState.IntersectRay(query);
-		if (result.Count == 0 || !result.ContainsKey("collider"))
-		{
-			return null;
-		}
-
-		if (result["collider"].AsGodotObject() is not Node node)
-		{
-			return null;
-		}
-
-		while (node != null)
-		{
-			if (TryGetObjectIndex(node.Name, out var index))
-			{
-				var obj = UWTileMap.current_tilemap?.LevelObjects[index];
-				if (IsDoorObject(obj))
-				{
-					return obj;
-				}
-			}
-
-			node = node.GetParent();
-		}
-
-		return null;
-	}
-
-	static uwObject FindNearestDoorInTiles()
-	{
-		var objList = UWTileMap.current_tilemap?.LevelObjects;
-		if (objList == null)
-		{
-			return null;
-		}
-
-		var px = motion.playerMotionParams.x_0;
-		var py = motion.playerMotionParams.y_2;
-		var playerPos = uwObject.XYZToVector3(px, py, motion.playerMotionParams.z_4);
-
-		var forward = Vector3.Zero;
-		if (_xrCamera != null)
-		{
-			forward = -_xrCamera.GlobalTransform.Basis.Z;
-			forward.Y = 0;
-			if (forward.LengthSquared() > 0.0001f)
-			{
-				forward = forward.Normalized();
-			}
-			else
-			{
-				forward = Vector3.Zero;
-			}
-		}
-
-		var maxRange = 2.5f * tileMapRender.TileWidth;
-		uwObject best = null;
-		var bestDist = maxRange;
-		var centerX = playerdat.playerObject.tileX;
-		var centerY = playerdat.playerObject.tileY;
-
-		for (var dy = -1; dy <= 1; dy++)
-		{
-			for (var dx = -1; dx <= 1; dx++)
-			{
-				var tx = centerX + dx;
-				var ty = centerY + dy;
-				if (!UWTileMap.ValidTile(tx, ty))
-				{
-					continue;
-				}
-
-				var candidate = objectsearch.FindMatchInTile(tx, ty, 5, 0, -1);
-				if (candidate == null)
-				{
-					candidate = objectsearch.FindMatchInTile(tx, ty, 7, 0, 0xF);
-				}
-
-				if (!IsDoorObject(candidate))
-				{
-					continue;
-				}
-
-				var doorPos = candidate.GetCoordinate();
-				var offset = doorPos - playerPos;
-				offset.Y = 0;
-				var dist = offset.Length();
-				if (dist >= bestDist)
-				{
-					continue;
-				}
-
-				if (forward != Vector3.Zero && dist > 0.1f)
-				{
-					var dot = offset.Normalized().Dot(forward);
-					if (dot < 0.3f)
-					{
-						continue;
-					}
-				}
-
-				best = candidate;
-				bestDist = dist;
-			}
-		}
-
-		return best;
-	}
-
-	static bool IsDoorObject(uwObject obj)
-	{
-		if (obj == null)
-		{
-			return false;
-		}
-
-		if (obj.majorclass == 5 && obj.minorclass == 0)
-		{
-			return true;
-		}
-
-		return obj.majorclass == 7 && obj.minorclass == 0 && obj.classindex == 0xF;
 	}
 
 	static bool TryGetObjectIndex(StringName nodeName, out int index)

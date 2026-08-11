@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Godot;
 
 namespace Underworld
@@ -8,7 +9,9 @@ namespace Underworld
 	{
 		const string LogUserPath = "user://vr_combat_motion.log";
 
-		static FileAccess _file;
+		static Godot.FileAccess _file;
+		static StreamWriter _workspaceWriter;
+		static string _workspaceLogPath;
 		static bool _sessionOpen;
 		static double _sessionStartSec;
 
@@ -19,6 +22,8 @@ namespace Underworld
 
 		public static string LogFilePath => ProjectSettings.GlobalizePath(LogUserPath);
 
+		public static string WorkspaceLogFilePath => _workspaceLogPath ?? string.Empty;
+
 		public static void EnsureSession()
 		{
 			if (!IsEnabled || _sessionOpen)
@@ -26,19 +31,21 @@ namespace Underworld
 				return;
 			}
 
-			var exists = FileAccess.FileExists(LogUserPath);
+			var exists = Godot.FileAccess.FileExists(LogUserPath);
 			if (exists)
 			{
-				_file = FileAccess.Open(LogUserPath, FileAccess.ModeFlags.ReadWrite);
+				_file = Godot.FileAccess.Open(LogUserPath, Godot.FileAccess.ModeFlags.ReadWrite);
 				_file?.SeekEnd();
 			}
 			else
 			{
-				_file = FileAccess.Open(LogUserPath, FileAccess.ModeFlags.Write);
+				_file = Godot.FileAccess.Open(LogUserPath, Godot.FileAccess.ModeFlags.Write);
 				WriteHeader();
 			}
 
-			if (_file == null)
+			TryOpenWorkspaceLog(exists);
+
+			if (_file == null && _workspaceWriter == null)
 			{
 				GD.PushWarning("[VR combat log] Could not open vr_combat_motion.log for writing.");
 				return;
@@ -46,7 +53,8 @@ namespace Underworld
 
 			if (exists)
 			{
-				_file.StoreLine(string.Empty);
+				_file?.StoreLine(string.Empty);
+				_workspaceWriter?.WriteLine();
 			}
 
 			_sessionStartSec = Time.GetTicksMsec() / 1000.0;
@@ -65,23 +73,33 @@ namespace Underworld
 				peakDepth: 0f,
 				charge: combat.PlayerAttackCharge,
 				extra: $"lefty={playerdat.isLefty},path={LogFilePath}");
-			_file.Flush();
-			GD.Print($"[VR combat log] Writing to {LogFilePath}");
+			_file?.Flush();
+			_workspaceWriter?.Flush();
+			var paths = LogFilePath
+				+ (string.IsNullOrEmpty(_workspaceLogPath) ? string.Empty : $" and {_workspaceLogPath}");
+			VrDiagLog.Print($"[VR combat log] Writing to {paths}");
 		}
 
 		public static void CloseSession()
 		{
-			if (!_sessionOpen || _file == null)
+			if (!_sessionOpen)
 			{
 				return;
 			}
 
-			WriteRow("session_end", combat.stage.ToString(), "n/a", -1,
-				Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero,
-				Vector3.Zero, Vector3.Zero, 0f, combat.PlayerAttackCharge, string.Empty);
-			_file.Flush();
-			_file.Close();
-			_file = null;
+			if (_file != null)
+			{
+				WriteRow("session_end", combat.stage.ToString(), "n/a", -1,
+					Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero,
+					Vector3.Zero, Vector3.Zero, 0f, combat.PlayerAttackCharge, string.Empty);
+				_file.Flush();
+				_file.Close();
+				_file = null;
+			}
+
+			_workspaceWriter?.Flush();
+			_workspaceWriter?.Dispose();
+			_workspaceWriter = null;
 			_sessionOpen = false;
 		}
 
@@ -159,11 +177,69 @@ namespace Underworld
 		public static void Flush()
 		{
 			_file?.Flush();
+			_workspaceWriter?.Flush();
+		}
+
+		static void TryOpenWorkspaceLog(bool append)
+		{
+			if (_workspaceWriter != null)
+			{
+				return;
+			}
+
+			try
+			{
+				var projectRoot = ProjectSettings.GlobalizePath("res://");
+				if (string.IsNullOrEmpty(projectRoot))
+				{
+					return;
+				}
+
+				var logsDir = Path.Combine(projectRoot, "logs");
+				Directory.CreateDirectory(logsDir);
+				_workspaceLogPath = Path.Combine(logsDir, "vr_combat_motion.log");
+				_workspaceWriter = new StreamWriter(_workspaceLogPath, append: append)
+				{
+					AutoFlush = false,
+				};
+				if (!append)
+				{
+					WriteHeaderToWorkspace();
+				}
+				else
+				{
+					_workspaceWriter.WriteLine();
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PushWarning($"[VR combat log] Workspace log unavailable: {ex.Message}");
+				_workspaceLogPath = string.Empty;
+			}
 		}
 
 		static void WriteHeader()
 		{
-			_file.StoreLine(
+			var line =
+				"time_sec,frame,event,combat_stage,motion_state,lefty,classifier_swing,"
+				+ "world_x,world_y,world_z,local_x,local_y,local_z,"
+				+ "stroke_start_x,stroke_start_y,stroke_start_z,"
+				+ "peak_x,peak_y,peak_z,"
+				+ "windup_x,windup_y,windup_z,"
+				+ "thrust_x,thrust_y,thrust_z,"
+				+ "slash_side,up,back,side_over_up,up_over_side,peak_depth,charge,extra";
+			_file?.StoreLine(line);
+			WriteHeaderToWorkspace();
+		}
+
+		static void WriteHeaderToWorkspace()
+		{
+			if (_workspaceWriter == null)
+			{
+				return;
+			}
+
+			_workspaceWriter.WriteLine(
 				"time_sec,frame,event,combat_stage,motion_state,lefty,classifier_swing,"
 				+ "world_x,world_y,world_z,local_x,local_y,local_z,"
 				+ "stroke_start_x,stroke_start_y,stroke_start_z,"
@@ -188,7 +264,7 @@ namespace Underworld
 			int charge,
 			string extra)
 		{
-			if (_file == null)
+			if (_file == null && _workspaceWriter == null)
 			{
 				return;
 			}
@@ -199,8 +275,7 @@ namespace Underworld
 			var sideOverUp = up > 0.02f ? slashSide / up : 0f;
 			var upOverSide = slashSide > 0.02f ? up / slashSide : 0f;
 			var t = Time.GetTicksMsec() / 1000.0 - _sessionStartSec;
-
-			_file.StoreLine(string.Join(",",
+			var line = string.Join(",",
 				F((float)t),
 				Engine.GetProcessFrames().ToString(),
 				Csv(eventName),
@@ -217,7 +292,10 @@ namespace Underworld
 				F(slashSide), F(up), F(back), F(sideOverUp), F(upOverSide),
 				F(peakDepth),
 				charge.ToString(),
-				Csv(extra)));
+				Csv(extra));
+
+			_file?.StoreLine(line);
+			_workspaceWriter?.WriteLine(line);
 		}
 
 		static string F(float v) => v.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);

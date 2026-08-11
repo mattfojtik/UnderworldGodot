@@ -49,7 +49,8 @@ namespace Underworld
 				&& !uwsettings.instance.vr_mirror
 				&& uimanager.InGame
 				&& uimanager.InteractionMode == uimanager.InteractionModes.ModeAttack
-				&& playerdat.play_drawn == 1;
+				&& playerdat.play_drawn == 1
+				&& SpellCasting.currentSpell == null;
 		}
 
 		public static bool IsAttackHeldDown => UseVrCombatInput() && _attackHeldDown;
