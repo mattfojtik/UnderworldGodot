@@ -83,7 +83,7 @@ A particular save once hung the game on load; file is gone but **may recur**. If
 - Head-locked active spells + dedicated chain widget
 - Mage cheat: `'` / `` ` `` / `~` while in-game (message scroll confirms)
 - Chain crop tuned for flask click separation
-- **Aimed spells + ranged (complete):** laser absolute aim; targeting cursor on laser (2 m); spawn 1 m along laser (no self-hits); cast SFX on launch; ranged charge/release = stab-plane gesture
+- **Aimed spells + ranged (complete):** laser absolute aim; targeting cursor on laser; spawn ~2 m along laser; caster self-hit only when world-near (DOS run-into preserved; VR tile-AABB false positives ignored); cast SFX on launch; ranged charge/release = stab-plane gesture
 
 ## Confirmed working
 

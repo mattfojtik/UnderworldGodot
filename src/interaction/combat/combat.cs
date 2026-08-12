@@ -586,6 +586,13 @@ namespace Underworld
                     finaldamage >>= 1;
                 }
             }
+            if (DefendingCharacter.index == 1 || DefendingCharacter == playerdat.playerObject)
+            {
+                LogMissileDiag(
+                    $"AttackerAppliesFinalDamage → player final={finaldamage} type={damageType} "
+                    + $"attacker={attacker} MissileAttack={MissileAttack} AttackDamageRaw={AttackDamage}");
+            }
+
             //apply damage
             var DamageObjectResult = damage.DamageObject(
                 objToDamage: DefendingCharacter,

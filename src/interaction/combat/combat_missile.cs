@@ -1,5 +1,5 @@
-
 using System.Diagnostics;
+using Godot;
 
 namespace Underworld
 {
@@ -8,19 +8,93 @@ namespace Underworld
     /// </summary>
     public partial class combat : UWClass
     {
+        /// <summary>Temporary self-hit diagnosis — Godot Output + Debug.</summary>
+        public static void LogMissileDiag(string message)
+        {
+            var line = $"[MISSILE-DIAG] {message}";
+            GD.Print(line);
+            Debug.Print(line);
+            if (VrDiagLog.IsEnabled)
+            {
+                VrDiagLog.Print(line);
+            }
+        }
+
         public static void MissileImpact(uwObject projectile, uwObject objectHit)
         {
             var diDamageMultipler = 1;
-            Debug.Print($"Missile impact {projectile.a_name} on {objectHit.a_name}");
+            var hitIsPlayer = objectHit == playerdat.playerObject || objectHit?.index == 1;
+            var sourceIsPlayer = projectile.ProjectileSourceID == 1
+                || projectile.ProjectileSourceID == playerdat.playerObject?.index;
+            var sourceIsHit = projectile.ProjectileSourceID != 0
+                && projectile.ProjectileSourceID == objectHit.index;
+
+            var p = projectile.GetCoordinate();
+            var h = objectHit.GetCoordinate();
+            var dx = p.X - h.X;
+            var dy = p.Y - h.Y;
+            var dz = p.Z - h.Z;
+            var horiz = Mathf.Sqrt(dx * dx + dz * dz);
+            // Prefer XR camera XZ in native VR so room-scale head ≠ UW body marker can't fool the gate.
+            var casterWorld = h;
+            var casterLabel = "hit.GetCoordinate";
+            if (hitIsPlayer && VrController.IsActive && !uwsettings.instance.vr_mirror)
+            {
+                var cam = VrController.GetDiagCameraWorldPosition();
+                if (cam.HasValue)
+                {
+                    casterWorld = cam.Value;
+                    casterLabel = "xrCamera";
+                    dx = p.X - casterWorld.X;
+                    dz = p.Z - casterWorld.Z;
+                    horiz = Mathf.Sqrt(dx * dx + dz * dz);
+                }
+            }
+
+            if (hitIsPlayer || sourceIsPlayer || sourceIsHit)
+            {
+                LogMissileDiag(
+                    $"MissileImpact ENTER proj={projectile.a_name} id=0x{projectile.item_id:X} idx={projectile.index} "
+                    + $"src={projectile.ProjectileSourceID} hit={objectHit.a_name} hitIdx={objectHit.index} "
+                    + $"sourceIsHit={sourceIsHit} hitIsPlayer={hitIsPlayer} maj/min={projectile.majorclass}/{projectile.minorclass} "
+                    + $"projTile=({projectile.tileX},{projectile.tileY}) hitTile=({objectHit.tileX},{objectHit.tileY}) "
+                    + $"projPos=({p.X:F2},{p.Y:F2},{p.Z:F2}) hitPos=({h.X:F2},{h.Y:F2},{h.Z:F2}) "
+                    + $"casterRef={casterLabel}=({casterWorld.X:F2},{casterWorld.Y:F2},{casterWorld.Z:F2}) "
+                    + $"horiz={horiz:F2}m vert={dy:F2}m "
+                    + $"bit15_7={projectile.UnkBit_0X15_Bit7} dseg_25BC={UWMotionParamArray.dseg_67d6_25BC}");
+            }
+            else
+            {
+                Debug.Print($"Missile impact {projectile.a_name} on {objectHit.a_name}");
+            }
+
             if (_RES==GAME_UW2 && projectile.item_id == 0x1E)
             {
                 //projectile is a UW2 Satellite
                 if (projectile.ProjectileSourceID == objectHit.index)
                 {
                     //satellite has hit it's caster
+                    LogMissileDiag("MissileImpact SKIP satellite→caster");
                     projectile.UnkBit_0X15_Bit7 = 0;
                     return ;
                 }
+            }
+
+            // DOS allows real run-into self-hits; reject phantom long-range caster hits
+            // (VR laser spawn / tile-AABB). Gate lives here so every Use() path is covered.
+            if (sourceIsHit)
+            {
+                const float maxHorizontalMeters = 0.9f;
+                if (horiz > maxHorizontalMeters)
+                {
+                    LogMissileDiag(
+                        $"MissileImpact SKIP self-hit (horiz={horiz:F2}m > {maxHorizontalMeters}m, casterRef={casterLabel})");
+                    projectile.UnkBit_0X15_Bit7 = 0;
+                    return;
+                }
+
+                LogMissileDiag(
+                    $"MissileImpact ALLOW self-hit (horiz={horiz:F2}m <= {maxHorizontalMeters}m, casterRef={casterLabel})");
             }
 
             var MissileDamage = rangedObjectDat.damage(projectile.item_id);
@@ -60,6 +134,14 @@ namespace Underworld
                 var6_y = UWMotionParamArray.dseg_67d6_25C0_Y;
             }
 
+            if (hitIsPlayer)
+            {
+                LogMissileDiag(
+                    $"MissileImpact → MissileAttackHit dmg={MissileDamage} "
+                    + $"dmgType={-rangedObjectDat.RangedWeaponType(projectile.item_id)} "
+                    + $"hitXY=({var4_x},{var6_y})");
+            }
+
             MissileAttackHit(
                 projectileSource: projectile.ProjectileSourceID, 
                 Projectile: projectile, 
@@ -88,7 +170,18 @@ namespace Underworld
         /// <param name="damageType"></param>
         static void MissileAttackHit(int projectileSource, uwObject Projectile, uwObject objectHit, int X, int Y, int damage, byte damageType)
         {
-            Debug.Print("Missile Attack Hit");
+            if (objectHit == playerdat.playerObject || objectHit?.index == 1)
+            {
+                LogMissileDiag(
+                    $"MissileAttackHit player dmg={damage} type={damageType} "
+                    + $"src={projectileSource} proj={Projectile?.a_name} idx={Projectile?.index} "
+                    + $"tile=({X},{Y})");
+            }
+            else
+            {
+                Debug.Print("Missile Attack Hit");
+            }
+
             DefendingCharacter = objectHit;
             CombatHitTileX = X; CombatHitTileY = Y;
             AttackWasACrit = false;

@@ -97,7 +97,7 @@ public static partial class VrController
 	/// <summary>Spell/ranged targeting reticle sits further along the laser than use-on icons.</summary>
 	const float ProjectileAimLaserIconDistance = 2.0f;
 	/// <summary>World metres along the laser before the projectile appears (avoids avatar self-hits).</summary>
-	const float LaserProjectileSpawnDistanceMeters = 1.0f;
+	const float LaserProjectileSpawnDistanceMeters = 2.0f;
 	static MeshInstance3D _useOnLaserIcon;
 	static int _useOnLaserIconItemId = -1;
 	static MeshInstance3D _spellAimLaserIcon;
@@ -1515,9 +1515,10 @@ public static partial class VrController
 		VrDiagLog.Print($"[VR] Message scroll panel attached to headset ({quadSize.X:F2}m wide).");
 	}
 
-	static Vector2 GetMessageScrollOffsetMeters() => new(
+	static Vector3 GetMessageScrollOffsetMeters() => new(
 		uwsettings.instance.vr_message_scroll_offset_x,
-		uwsettings.instance.vr_message_scroll_offset_y);
+		uwsettings.instance.vr_message_scroll_offset_y,
+		uwsettings.instance.vr_message_scroll_offset_z);
 
 	static bool ShouldShowMessageScrollPanel()
 	{
@@ -3194,6 +3195,17 @@ public static partial class VrController
 	/// <summary>Dominant-hand laser origin (controller tip).</summary>
 	public static Vector3 GetAimRayOriginPublic() => GetAimRayOrigin();
 
+	/// <summary>XR camera world position for missile self-hit diagnostics / proximity gate.</summary>
+	public static Vector3? GetDiagCameraWorldPosition()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror || _xrCamera == null)
+		{
+			return null;
+		}
+
+		return _xrCamera.GlobalPosition;
+	}
+
 	/// <summary>
 	/// Set missile heading/pitch from a world-space laser ray (same path as object throw).
 	/// Caller must clear via <see cref="ClearLaserProjectileAim"/> after PrepareProjectileObject.
@@ -3215,22 +3227,36 @@ public static partial class VrController
 	{
 		motion.UseVrLaserSpawnOrigin = false;
 		rayDir = rayDir.Normalized();
-		var spawn = rayOrigin + rayDir * LaserProjectileSpawnDistanceMeters;
-		if (!TryWorldPosToUwSpawn(spawn, out var tileX, out var tileY, out var xpos, out var ypos, out var zpos))
+		// Try farther along the laser if the near point fails tile conversion —
+		// falling back to body spawn is what causes magic missiles to self-hit.
+		float[] distances =
 		{
+			LaserProjectileSpawnDistanceMeters,
+			LaserProjectileSpawnDistanceMeters + 0.5f,
+			LaserProjectileSpawnDistanceMeters + 1.0f,
+		};
+		foreach (var distance in distances)
+		{
+			var spawn = rayOrigin + rayDir * distance;
+			if (!TryWorldPosToUwSpawn(spawn, out var tileX, out var tileY, out var xpos, out var ypos, out var zpos))
+			{
+				continue;
+			}
+
+			motion.projectileXHome = tileX;
+			motion.projectileYHome = tileY;
+			motion.spellXHome = tileX;
+			motion.spellYHome = tileY;
+			motion.VrLaserSpawnTileX = tileX;
+			motion.VrLaserSpawnTileY = tileY;
+			motion.VrLaserSpawnXpos = xpos;
+			motion.VrLaserSpawnYpos = ypos;
+			motion.VrLaserSpawnZpos = zpos;
+			motion.UseVrLaserSpawnOrigin = true;
 			return;
 		}
 
-		motion.projectileXHome = tileX;
-		motion.projectileYHome = tileY;
-		motion.spellXHome = tileX;
-		motion.spellYHome = tileY;
-		motion.VrLaserSpawnTileX = tileX;
-		motion.VrLaserSpawnTileY = tileY;
-		motion.VrLaserSpawnXpos = xpos;
-		motion.VrLaserSpawnYpos = ypos;
-		motion.VrLaserSpawnZpos = zpos;
-		motion.UseVrLaserSpawnOrigin = true;
+		VrDiagLog.Warn("[VR] Laser projectile spawn conversion failed; projectile may self-hit.");
 	}
 
 	public static void ClearLaserProjectileAim()

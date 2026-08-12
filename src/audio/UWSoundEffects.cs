@@ -57,6 +57,7 @@ namespace Underworld
                 // the TVFX backend (authentic AdLib behaviour). Volume
                 // attenuation flows through the backend's velocityOffset
                 // hook. See src/audio/sfx/godot/SoundEffects.cs.
+                // Do NOT play SOUND/NN.VOC here — those are cutscene/dialog samples.
                 Sfx.SoundEffects.Play(effectno, pan: pan, velocityOffset: velocityOffset);
             }
         }

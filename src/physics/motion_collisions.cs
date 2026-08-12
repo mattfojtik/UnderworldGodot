@@ -684,6 +684,34 @@ namespace Underworld
         }
 
         /// <summary>
+        /// World-space check used when a projectile would hit its own caster.
+        /// DOS allows that hit if you actually run into the bolt; VR laser spawn can
+        /// produce UW tile-AABB false positives about a tile away, which this rejects.
+        /// In native VR, prefer headset XZ so room-scale offset from the UW body marker
+        /// matches what the player perceives.
+        /// </summary>
+        static bool ProjectileWorldOverlapsCaster(uwObject projectile, uwObject caster, out float horizMeters)
+        {
+            var p = projectile.GetCoordinate();
+            var c = caster.GetCoordinate();
+            if (caster == playerdat.playerObject)
+            {
+                var cam = VrController.GetDiagCameraWorldPosition();
+                if (cam.HasValue)
+                {
+                    c = cam.Value;
+                }
+            }
+
+            var dx = p.X - c.X;
+            var dz = p.Z - c.Z;
+            horizMeters = Godot.Mathf.Sqrt(dx * dx + dz * dz);
+            // ~player radius + missile radius with a little slack for run-into hits.
+            const float maxHorizontalMeters = 0.9f;
+            return horizMeters <= maxHorizontalMeters;
+        }
+
+        /// <summary>
         /// Looks like this checks the tile for possible objects to collide with.
         /// </summary>
         /// <param name="arg0"></param>
@@ -874,6 +902,55 @@ namespace Underworld
 
                 var2_collideditemid = CollidedObject_VarA.item_id;
                 varB = commonObjDat.Unk6_0_maybecancollide(var2_collideditemid);
+
+                // Caster↔own-projectile: DOS allows real contact self-hits; reject phantom range.
+                // Cover both orders — projectile moving into caster, or caster moving into projectile.
+                var projectileHitsOwnCaster = MotionObject.ProjectileSourceID != 0
+                    && MotionObject.ProjectileSourceID == CollidedObject_VarA.index;
+                var casterHitsOwnProjectile = CollidedObject_VarA.ProjectileSourceID != 0
+                    && CollidedObject_VarA.ProjectileSourceID == MotionObject.index
+                    && CollidedObject_VarA.majorclass == 0
+                    && CollidedObject_VarA.minorclass == 1;
+
+                if (projectileHitsOwnCaster || casterHitsOwnProjectile)
+                {
+                    var proj = projectileHitsOwnCaster ? MotionObject : CollidedObject_VarA;
+                    var caster = projectileHitsOwnCaster ? CollidedObject_VarA : MotionObject;
+
+                    if (_RES == GAME_UW2 && proj.item_id == 0x1E)
+                    {
+                        combat.LogMissileDiag(
+                            $"CollideObjects SKIP satellite→caster proj={proj.index} caster={caster.index}");
+                        return 2;
+                    }
+
+                    var overlaps = ProjectileWorldOverlapsCaster(proj, caster, out var horiz);
+                    combat.LogMissileDiag(
+                        $"CollideObjects caster-hit check order={(projectileHitsOwnCaster ? "proj→caster" : "caster→proj")} "
+                        + $"proj={proj.a_name} idx={proj.index} id=0x{proj.item_id:X} src={proj.ProjectileSourceID} "
+                        + $"casterIdx={caster.index} horiz={horiz:F2}m overlaps={overlaps} "
+                        + $"projTile=({proj.tileX},{proj.tileY}) casterTile=({caster.tileX},{caster.tileY}) "
+                        + $"bit15_7={proj.UnkBit_0X15_Bit7}");
+                    if (!overlaps)
+                    {
+                        combat.LogMissileDiag("CollideObjects SKIP caster (world too far)");
+                        return 2;
+                    }
+
+                    combat.LogMissileDiag("CollideObjects ALLOW caster hit (world near)");
+                }
+                else if (CollidedObject_VarA != null
+                    && (CollidedObject_VarA.index == 1 || CollidedObject_VarA == playerdat.playerObject))
+                {
+                    // Projectile hit the player but ProjectileSourceID did not match — still log.
+                    combat.LogMissileDiag(
+                        $"CollideObjects hit-player (non-matching src) proj={MotionObject.a_name} "
+                        + $"idx={MotionObject.index} id=0x{MotionObject.item_id:X} "
+                        + $"src={MotionObject.ProjectileSourceID} playerIdx={CollidedObject_VarA.index} "
+                        + $"maj/min={MotionObject.majorclass}/{MotionObject.minorclass} "
+                        + $"ActivatedByMotion={commonObjDat.ActivatedByCollision(MotionObject.item_id)} "
+                        + $"ActivatedByHit={commonObjDat.ActivatedByCollision(CollidedObject_VarA.item_id)}");
+                }
 
                 //Seg030_2bb7_307
                 if (CollidedObject_VarA.index < 256)

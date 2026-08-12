@@ -48,6 +48,17 @@ namespace Underworld
         static bool DetonateProjectile(uwObject projectile, int Source)
         {
             Debug.Print("Detonate projectile");
+            if (Source == 1 || projectile?.ProjectileSourceID == 1
+                || (playerdat.playerObject != null
+                    && projectile.tileX == playerdat.playerObject.tileX
+                    && projectile.tileY == playerdat.playerObject.tileY))
+            {
+                combat.LogMissileDiag(
+                    $"DetonateProjectile proj={projectile?.a_name} id=0x{projectile?.item_id:X} "
+                    + $"src={Source} tile=({projectile?.tileX},{projectile?.tileY}) "
+                    + $"playerTile=({playerdat.playerObject?.tileX},{playerdat.playerObject?.tileY})");
+            }
+
             var maxEntries = 2;
             if (_RES==GAME_UW2)
             {

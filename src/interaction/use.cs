@@ -28,6 +28,11 @@ namespace Underworld
                             if ((UsingObjectOrCharacter.majorclass == 0) && (UsingObjectOrCharacter.minorclass == 1))
                             {
                                 //projectile has hit the player.
+                                combat.LogMissileDiag(
+                                    $"use.Use path=hit-player-index1 UsedFromCollision={UsedFromCollision} "
+                                    + $"proj={UsingObjectOrCharacter.a_name} idx={UsingObjectOrCharacter.index} "
+                                    + $"id=0x{UsingObjectOrCharacter.item_id:X} src={UsingObjectOrCharacter.ProjectileSourceID} "
+                                    + $"playerIdx={ObjectUsed.index}");
                                 combat.MissileImpact(projectile: UsingObjectOrCharacter, objectHit: ObjectUsed);
                                 return true;
                             }
@@ -110,6 +115,16 @@ namespace Underworld
                     {
                         if ((UsingObjectOrCharacter.majorclass == 0) && (UsingObjectOrCharacter.minorclass == 1))//a missile projectile
                         {
+                            if (ObjectUsed == playerdat.playerObject || ObjectUsed?.index == 1
+                                || UsingObjectOrCharacter.ProjectileSourceID == 1)
+                            {
+                                combat.LogMissileDiag(
+                                    $"use.Use path=result-false-missile-impact UsedFromCollision={UsedFromCollision} "
+                                    + $"proj={UsingObjectOrCharacter.a_name} idx={UsingObjectOrCharacter.index} "
+                                    + $"src={UsingObjectOrCharacter.ProjectileSourceID} "
+                                    + $"hit={ObjectUsed?.a_name} hitIdx={ObjectUsed?.index}");
+                            }
+
                             combat.MissileImpact(projectile: UsingObjectOrCharacter, objectHit: ObjectUsed);
                             result = true;
                         }
@@ -215,6 +230,16 @@ namespace Underworld
                         //projectile has hit the UsingObjectOrCharacter.
                         if (UsingObjectOrCharacter != null)
                         {
+                            if (UsingObjectOrCharacter == playerdat.playerObject || UsingObjectOrCharacter.index == 1
+                                || ObjectUsed.ProjectileSourceID == 1)
+                            {
+                                combat.LogMissileDiag(
+                                    $"UseMajorClass0 path=SWAPPED-ARGS MissileImpact "
+                                    + $"ObjectUsed(as proj?)={ObjectUsed.a_name} idx={ObjectUsed.index} "
+                                    + $"src={ObjectUsed.ProjectileSourceID} "
+                                    + $"Using={UsingObjectOrCharacter.a_name} idx={UsingObjectOrCharacter.index}");
+                            }
+
                             combat.MissileImpact(ObjectUsed, UsingObjectOrCharacter);
                         }
                         return true;

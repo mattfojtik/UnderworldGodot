@@ -151,9 +151,10 @@ public class uwsettings
     public float vr_status_screen_distance { get; set; } = 2f;
     /// <summary>Vertical offset applied to all head overlays in metres (negative lowers the whole group).</summary>
     public float vr_status_panels_offset_y { get; set; } = -0.4f;
-    /// <summary>Head-locked message scroll offset in metres (X = right, Y = up).</summary>
+    /// <summary>Head-locked message scroll offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_message_scroll_offset_x { get; set; } = 0f;
     public float vr_message_scroll_offset_y { get; set; } = 0f;
+    public float vr_message_scroll_offset_z { get; set; } = 0f;
     /// <summary>Head-locked health flask offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_health_flask_offset_x { get; set; } = 0f;
     public float vr_health_flask_offset_y { get; set; } = 0f;

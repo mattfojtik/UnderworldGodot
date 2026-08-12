@@ -9,7 +9,9 @@ namespace Underworld
     {
         public static void DamagePlayer(int basedamage, int damagetype, int damagesource)
         {
-            Debug.Print("TODO further implement this");
+            combat.LogMissileDiag(
+                $"DamagePlayer ENTER dmg={basedamage} type={damagetype} src={damagesource} "
+                + $"hp={playerdat.play_hp} stack={new StackTrace(1, false)}");
             ScaleDamage(playerdat.playerObject.item_id, ref basedamage, damagetype);
             playerdat.playerObject.ProjectileSourceID = (short)damagesource;
 
@@ -21,6 +23,8 @@ namespace Underworld
             {
                 playerdat.play_hp = 0;
             }
+
+            combat.LogMissileDiag($"DamagePlayer AFTER dmg={basedamage} hp={playerdat.play_hp}");
         }
 
         /// <summary>
@@ -35,7 +39,16 @@ namespace Underworld
             basedamage = ScaleDamage(objToDamage.item_id, ref basedamage, damagetype);
             if (basedamage != 0)
             {
-                Debug.Print($"Damage {objToDamage.a_name} by {basedamage} type {damagetype} source {damagesource}");
+                if (objToDamage == playerdat.playerObject || objToDamage.index == 1)
+                {
+                    combat.LogMissileDiag(
+                        $"DamageObject PLAYER dmg={basedamage} type={damagetype} src={damagesource} "
+                        + $"hp={playerdat.play_hp} stack={new StackTrace(1, false)}");
+                }
+                else
+                {
+                    Debug.Print($"Damage {objToDamage.a_name} by {basedamage} type {damagetype} source {damagesource}");
+                }
             }
             if (objToDamage.majorclass == 1)
             {
@@ -620,6 +633,14 @@ namespace Underworld
             if (spellclass != 0)
             {
                 var tile = UWTileMap.current_tilemap.Tiles[tileX, tileY];
+                var playerHere = playerdat.playerObject != null
+                    && playerdat.playerObject.tileX == tileX
+                    && playerdat.playerObject.tileY == tileY;
+                if (playerHere)
+                {
+                    combat.LogMissileDiag(
+                        $"DamageObjectsInTile player-tile ({tileX},{tileY}) source={source} spellclass={spellclass}");
+                }
 
                 if (tile.indexObjectList != 0)
                 {

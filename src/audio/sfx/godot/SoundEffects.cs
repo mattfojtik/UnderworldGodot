@@ -10,14 +10,16 @@ namespace Underworld.Sfx;
 /// dispatches to the active backend, and silently no-ops if SFX failed to
 /// initialise (missing data files, unsupported synth choice).
 ///
-/// v1 ships only the TVFX/OPL backend. <c>synth=cm32l|mt32|soundfont</c> users
-/// see a one-time warning at startup; SFX is silent for them until the MT-32
-/// backend lands in a follow-up.
+/// v1 ships the TVFX/OPL backend for UW1 SFX. Music may use soundfont/MT-32 while
+/// SFX still route through OPL until an MT-32 SFX backend exists.
 /// </summary>
 public static class SoundEffects
 {
     public static SoundEntry[] SoundDat = Array.Empty<SoundEntry>();
     private static ISfxBackend _backend;
+
+    /// <summary>True when an OPL/TVFX (or future) SFX backend is ready to play.</summary>
+    public static bool IsAvailable => _backend != null;
 
     /// <summary>
     /// Boot-time setup. Call once after <see cref="SfxStreamPlayer.Instance"/>
@@ -48,7 +50,8 @@ public static class SoundEffects
             return;
         }
 
-        // Backend selection. Lower-cased synth string per uwsettings convention.
+        // Backend selection. Music synth can stay soundfont/MT-32; UW1 SFX use OPL/TVFX
+        // until a dedicated MT-32 SFX backend exists (SOUND/NN.VOC files are cutscene dialog).
         string s = synth?.ToLowerInvariant() ?? "soundfont";
         switch (s)
         {
@@ -58,13 +61,14 @@ public static class SoundEffects
             case "cm32l":
             case "mt32":
             case "soundfont":
-                GD.PushWarning(
-                    $"SoundEffects: synth='{s}' uses MT-32 SFX, which is not yet implemented. " +
-                    "v1 ships only the OPL backend. Set synth=opl in uwsettings.json for SFX, " +
-                    "or wait for the MT-32 backend follow-up.");
+                GD.Print(
+                    $"SoundEffects: synth='{s}' — using OPL/TVFX for UW1 SFX " +
+                    "(MT-32 SFX backend not implemented yet).");
+                _backend = TryCreateOplBackend(uw1SoundDir);
                 break;
             default:
-                GD.PushWarning($"SoundEffects: unknown synth='{s}'; SFX disabled.");
+                GD.PushWarning($"SoundEffects: unknown synth='{s}'; trying OPL/TVFX for UW1 SFX.");
+                _backend = TryCreateOplBackend(uw1SoundDir);
                 break;
         }
     }

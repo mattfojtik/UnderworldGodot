@@ -145,7 +145,11 @@ namespace Underworld
                     }
                 }
 
-                if (PlaceProjectileInWorld(projectile, Launcher, true))
+                if (PlaceProjectileInWorld(
+                        projectile,
+                        Launcher,
+                        // VR laser spawn is already placed ahead of the avatar; don't pull it back.
+                        ProjectFromLauncher: !(UseVrLaserSpawnOrigin && Launcher == playerdat.playerObject)))
                 {
                     if (projectile.majorclass != 1)
                     {
@@ -195,6 +199,22 @@ namespace Underworld
                         {
                             UWsoundeffects.PlaySoundEffectAtObject(0xA, projectile, 0);//throw sounds.
                         }
+                    }
+
+                    if (Launcher == playerdat.playerObject)
+                    {
+                        var pp = projectile.GetCoordinate();
+                        var lp = Launcher.GetCoordinate();
+                        var dx = pp.X - lp.X;
+                        var dz = pp.Z - lp.Z;
+                        var horiz = System.MathF.Sqrt(dx * dx + dz * dz);
+                        combat.LogMissileDiag(
+                            $"PrepareProjectile SPAWN proj={projectile.a_name} id=0x{projectile.item_id:X} idx={projectile.index} "
+                            + $"src={projectile.ProjectileSourceID} vrLaser={UseVrLaserSpawnOrigin} absHead={UseAbsoluteProjectileHeading} "
+                            + $"heading={MissileLauncherHeadingBase} pitch={MissilePitch} "
+                            + $"tile=({tileX},{tileY}) xpos={projectile.xpos} ypos={projectile.ypos} zpos={projectile.zpos} "
+                            + $"projPos=({pp.X:F2},{pp.Y:F2},{pp.Z:F2}) launcherPos=({lp.X:F2},{lp.Y:F2},{lp.Z:F2}) "
+                            + $"horizFromLauncher={horiz:F2}m launcherTile=({Launcher.tileX},{Launcher.tileY})");
                     }
 
                     return projectile;
