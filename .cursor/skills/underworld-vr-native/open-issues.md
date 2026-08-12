@@ -10,8 +10,8 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 - Ideas: floor-sprite AABB/quad pick; physics fallback; vision refresh before pick.
 
 ### Live status-panel offset debug mode
-- In-headset X/Y/Z nudge for every head-locked widget; write through to settings without restart.
-- Widgets: health/mana/compass/inventory/runes/stats/shelf/spells/chain/conversation/weapon/gem/eyes + global Y.
+- Branch `vr-status-panel-offset-tuner` (dev-only, do not merge). See `docs/vr-status-panel-offset-tune.md`.
+- Discrete stick/button nudges + Label3D X/Y/Z; save to settings.json.
 
 ## Medium priority
 

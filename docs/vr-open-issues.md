@@ -21,7 +21,7 @@ Settings in `user://settings.json`: `vr_diag_log` (default true), `vr_debug`, `v
 Nearby floor objects (e.g. bedroll) sometimes return "you see nothing" when laser should hit. Must fix with controller laser only (not head gaze).
 
 ### Live status-panel offset debug mode
-Need a debug mode to nudge **X/Y/Z offsets for every head-locked status panel** live in-headset (no JSON edit + restart between trials). Persist to `settings.json` / schema when dialed in. Covers flasks, inventory, runes, stats, chain, spells, conversation, compass, gem, eyes, weapon anim, global Y, etc.
+**In progress on branch `vr-status-panel-offset-tuner` (do not merge).** See `docs/vr-status-panel-offset-tune.md`. Live X/Y/Z discrete nudges + debug labels; persist via left stick click → `settings.json`.
 
 ---
 

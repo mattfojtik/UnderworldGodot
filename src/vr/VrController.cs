@@ -220,6 +220,7 @@ public static partial class VrController
 	public static void InitExplorePlayer()
 	{
 		playerdat.InitEmptyPlayer("Avatar");
+		playerdat.isLefty = false; // right-handed (zeroed pdat defaults to lefty)
 		playerdat.STR = 18;
 		playerdat.DEX = 18;
 		playerdat.INT = 18;
@@ -756,7 +757,7 @@ public static partial class VrController
 		}
 		else
 		{
-			if (IsActive && (uimanager.InGame || uimanager.InConversation))
+			if (IsActive && (uimanager.InGame || uimanager.InConversation) && !IsStatusPanelOffsetTuneActive())
 			{
 				ApplyStatusOverlayPointerInput();
 			}
@@ -766,18 +767,30 @@ public static partial class VrController
 
 		if (IsActive)
 		{
-			ApplyCombatModeToggleInput();
-			VrCombatMotion.Tick();
-			VrCombatMotionDebug.Update(VrCombatMotion.ShouldShowGesturePlanes(), VrCombatMotion.GetDebugWeaponHandLocal());
-			if (!VrNumberPad.IsVisible)
+			TickStatusPanelOffsetTuner();
+
+			if (!IsStatusPanelOffsetTuneActive())
 			{
-				if (SpellCasting.currentSpell != null)
+				ApplyCombatModeToggleInput();
+				VrCombatMotion.Tick();
+				VrCombatMotionDebug.Update(VrCombatMotion.ShouldShowGesturePlanes(), VrCombatMotion.GetDebugWeaponHandLocal());
+				if (!VrNumberPad.IsVisible)
 				{
-					ApplySpellTargetingInput();
+					if (SpellCasting.currentSpell != null)
+					{
+						ApplySpellTargetingInput();
+					}
+					else
+					{
+						ApplyExplorationVerbInput();
+					}
 				}
 				else
 				{
-					ApplyExplorationVerbInput();
+					IsVrWorldPointerActive = false;
+					IsVrWorldRightHeld = false;
+					ResetExplorationVerbPressState();
+					ResetSpellTargetingPressState();
 				}
 			}
 			else
@@ -797,6 +810,7 @@ public static partial class VrController
 		}
 
 		UpdateVrGameplayPointerLaser();
+		UpdateOffsetTuneLaserFeedback();
 		UpdateVrOffHandPointerLaser();
 		if (VrNumberPad.IsVisible && NeedsFrontMenuLaser())
 		{
@@ -1515,9 +1529,10 @@ public static partial class VrController
 		VrDiagLog.Print($"[VR] Message scroll panel attached to headset ({quadSize.X:F2}m wide).");
 	}
 
-	static Vector2 GetMessageScrollOffsetMeters() => new(
+	static Vector3 GetMessageScrollOffsetMeters() => new(
 		uwsettings.instance.vr_message_scroll_offset_x,
-		uwsettings.instance.vr_message_scroll_offset_y);
+		uwsettings.instance.vr_message_scroll_offset_y,
+		uwsettings.instance.vr_message_scroll_offset_z);
 
 	static bool ShouldShowMessageScrollPanel()
 	{
@@ -2137,6 +2152,11 @@ public static partial class VrController
 	/// <summary>Laser is shown while either the hand HUD or head status overlays are open.</summary>
 	static bool ShouldShowVrGameplayPointerLaser()
 	{
+		if (IsStatusPanelOffsetTuneActive())
+		{
+			return true;
+		}
+
 		if (SpellCasting.currentSpell != null)
 		{
 			return true;
@@ -3382,6 +3402,12 @@ public static partial class VrController
 		}
 
 		var stick = ReadStick(_rightController);
+		// Offset tuner owns right-stick Y for discrete nudges; ignore diagonal snap pulls.
+		if (IsStatusPanelOffsetTuneActive() && Mathf.Abs(stick.Y) >= Mathf.Abs(stick.X))
+		{
+			return;
+		}
+
 		if (stick.X > StickDeadzone)
 		{
 			SnapTurn(+SnapTurnDegrees);
@@ -4535,6 +4561,12 @@ public static partial class VrController
 		if (_statusOverlayHovering)
 		{
 			UpdatePointerLaser(rayOrigin, _statusOverlayHitWorld, visible: true);
+			return;
+		}
+
+		if (IsStatusPanelOffsetTuneActive())
+		{
+			UpdateGameplayPointerLaser(rayOrigin, rayDir);
 			return;
 		}
 

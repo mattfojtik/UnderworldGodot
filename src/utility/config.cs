@@ -141,6 +141,11 @@ public class uwsettings
     public bool vr_status_panels { get; set; } = true;
     /// <summary>When true, head overlays stay visible instead of appearing on events and fading out.</summary>
     public bool vr_status_panels_always_visible { get; set; } = false;
+    /// <summary>
+    /// Dev-only (branch): live X/Y/Z offset tuning for head-locked status panels in VR.
+    /// Forces all panels visible and enables discrete stick/button nudges (not for shipping).
+    /// </summary>
+    public bool vr_status_panel_offset_tune { get; set; } = true;
     /// <summary>Seconds to show head overlays after activity before fading (when not always visible).</summary>
     public float vr_status_panels_display_seconds { get; set; } = 5f;
     /// <summary>Seconds for head overlay fade-out (when not always visible).</summary>
@@ -151,9 +156,10 @@ public class uwsettings
     public float vr_status_screen_distance { get; set; } = 2f;
     /// <summary>Vertical offset applied to all head overlays in metres (negative lowers the whole group).</summary>
     public float vr_status_panels_offset_y { get; set; } = -0.4f;
-    /// <summary>Head-locked message scroll offset in metres (X = right, Y = up).</summary>
+    /// <summary>Head-locked message scroll offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_message_scroll_offset_x { get; set; } = 0f;
     public float vr_message_scroll_offset_y { get; set; } = 0f;
+    public float vr_message_scroll_offset_z { get; set; } = 0f;
     /// <summary>Head-locked health flask offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_health_flask_offset_x { get; set; } = 0f;
     public float vr_health_flask_offset_y { get; set; } = 0f;

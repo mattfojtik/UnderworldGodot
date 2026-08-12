@@ -392,7 +392,28 @@ public static partial class VrController
 		return Mathf.Max(0.1f, uwsettings.instance.vr_status_panels_fade_seconds);
 	}
 
-	static bool HeadOverlaysAlwaysVisible() => uwsettings.instance.vr_status_panels_always_visible;
+	static bool HeadOverlaysAlwaysVisible() =>
+		uwsettings.instance.vr_status_panels_always_visible
+		|| IsStatusPanelOffsetTuneActive();
+
+	static void ForceStatusDuplicateVisibleForTune(Control root)
+	{
+		if (root == null || !IsStatusPanelOffsetTuneActive())
+		{
+			return;
+		}
+
+		root.Visible = true;
+		root.Modulate = Colors.White;
+		root.SelfModulate = Colors.White;
+		foreach (var child in root.GetChildren())
+		{
+			if (child is Control ctrl)
+			{
+				ForceStatusDuplicateVisibleForTune(ctrl);
+			}
+		}
+	}
 
 	static TextureRect GetHudPlaceholderRect()
 	{
@@ -585,24 +606,28 @@ public static partial class VrController
 		if (widget.Kind == VrStatusWidgetKind.SelectedRunes)
 		{
 			SyncSelectedRunesVisuals(widget);
+			ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 			return;
 		}
 
 		if (widget.Kind == VrStatusWidgetKind.ActiveSpells)
 		{
 			SyncActiveSpellsVisuals(widget);
+			ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 			return;
 		}
 
 		if (widget.Kind == VrStatusWidgetKind.Chain)
 		{
 			SyncChainVisuals(widget);
+			ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 			return;
 		}
 
 		if (UsesPanelSubtreeLayout(widget.Kind))
 		{
 			SyncControlSubtree(widget.Source, widget.Duplicate);
+			ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 			return;
 		}
 
@@ -618,10 +643,11 @@ public static partial class VrController
 			}
 
 			eyesDup.Texture = eyesSrc.Texture;
-			eyesDup.Visible = eyesSrc.Visible;
+			eyesDup.Visible = IsStatusPanelOffsetTuneActive() || eyesSrc.Visible;
 			eyesDup.Modulate = eyesSrc.Modulate;
 			eyesDup.Position = widget.EyesStripRect.Position - widget.HudRect.Position;
 			eyesDup.Size = widget.EyesStripRect.Size;
+			ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 			return;
 		}
 
@@ -629,16 +655,18 @@ public static partial class VrController
 		{
 			dupTr.Texture = srcTr.Texture;
 			dupTr.Material = srcTr.Material;
-			dupTr.Visible = srcTr.Visible;
+			dupTr.Visible = IsStatusPanelOffsetTuneActive() || srcTr.Visible;
 			dupTr.Modulate = srcTr.Modulate;
 			dupTr.Position = Vector2.Zero;
 			dupTr.Size = widget.HudRect.Size;
 			dupTr.TextureFilter = srcTr.TextureFilter;
+			ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 			return;
 		}
 
 		SyncControlSubtree(widget.Source, widget.Duplicate);
 		widget.Duplicate.Position = Vector2.Zero;
+		ForceStatusDuplicateVisibleForTune(widget.Duplicate);
 	}
 
 	static void SyncChainsCompanion(VrStatusWidget widget)
