@@ -54,6 +54,14 @@ namespace Underworld
                     RotatingOn = true;
                     EnableDisable(PanelToTurnOn, true);
                     PanelToTurnOn.Scale = PanelToTurnOff.Scale;
+                    if (PanelToTurnOn == PanelRuneBag)
+                    {
+                        VrController.NotifyVrRuneBagPanelUpdated();
+                    }
+                    else if (PanelToTurnOn == PanelStats)
+                    {
+                        VrController.NotifyVrStatsPanelUpdated();
+                    }
                 }
                 else
                 {

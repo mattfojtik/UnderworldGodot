@@ -170,6 +170,22 @@ public class uwsettings
     public float vr_inventory_offset_x { get; set; } = 0f;
     public float vr_inventory_offset_y { get; set; } = 0f;
     public float vr_inventory_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked rune bag/shelf offset in metres (X = right, Y = up, Z = farther from headset).</summary>
+    public float vr_rune_bag_offset_x { get; set; } = 0f;
+    public float vr_rune_bag_offset_y { get; set; } = 0f;
+    public float vr_rune_bag_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked stats panel offset in metres (X = right, Y = up, Z = farther from headset).</summary>
+    public float vr_stats_offset_x { get; set; } = 0f;
+    public float vr_stats_offset_y { get; set; } = 0f;
+    public float vr_stats_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked selected-rune shelf offset in metres (X = right, Y = up, Z = farther from headset).</summary>
+    public float vr_rune_shelf_offset_x { get; set; } = 0f;
+    public float vr_rune_shelf_offset_y { get; set; } = 0f;
+    public float vr_rune_shelf_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked conversation portrait/dialogue offset in metres (X = right, Y = up, Z = farther from headset).</summary>
+    public float vr_conversation_offset_x { get; set; } = 0f;
+    public float vr_conversation_offset_y { get; set; } = 0f;
+    public float vr_conversation_offset_z { get; set; } = 0f;
     /// <summary>Head-locked weapon attack animation offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_weapon_anim_offset_x { get; set; } = 0f;
     public float vr_weapon_anim_offset_y { get; set; } = 0f;

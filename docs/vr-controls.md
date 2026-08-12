@@ -111,7 +111,7 @@ Works **in or out of combat** (DOS behavior).
 
 1. Open **rune bag** from inventory (same as flat — swaps inventory panel to runes via `SetPanelMode(1)`).
 2. Laser-click runes in the bag to select (up to three on the shelf).
-3. **New head-locked panel** (planned): shows selected runes / spell line — mirror DOS shelf.
+3. **Head-locked rune shelf** mirrors the paperdoll rune bag while it is open (`SetPanelMode(1)`); laser-click runes and cast area.
 4. **Cast:** laser-click the cast area on that panel (same as `SelectedRunesClick` / flat game), or optional **left X** shortcut when runes are ready.
 
 ### After spell is armed (`SpellCasting.currentSpell != null`)
@@ -129,8 +129,8 @@ Works **in or out of combat** (DOS behavior).
 | Feature | VR access |
 |---------|-----------|
 | **Map** | Click map/compass object in inventory overlay (same as flat). No dedicated map button. |
-| **Stats** | Laser-click **pull chain** on floating inventory status panel → `ChangePanels()` (inventory ↔ stats). |
-| **Runes** | Laser-click rune bag in inventory. |
+| **Stats** | Laser-click **pull chain** on floating inventory/runes/stats status panel → `ChangePanels()`. Head-locked stats panel appears when open. |
+| **Runes** | Laser-click rune bag in inventory. Head-locked rune bag + selected-rune shelf overlays. |
 | **Sleep / camp** | Use bedroll in world or click bedroll in inventory. No F10 equivalent in VR. |
 
 F-keys in `main.cs` are dev/debug shortcuts only; VR does not replicate them.
@@ -140,7 +140,7 @@ F-keys in `main.cs` are dev/debug shortcuts only; VR does not replicate them.
 | Input | Action |
 |-------|--------|
 | Left menu | Hand HUD (1280×800 panel on off-hand controller) |
-| Left Y | Head-locked status overlays (message scroll, flasks, gem, inventory strip, …) |
+| Left Y | Head-locked status overlays (message scroll, flasks, gem, inventory strip, conversation portrait, rune shelf, …) |
 | Dominant trigger (while pointing at inventory) | **Use** on **release** (always ModeUse) |
 | Dominant trigger (other HUD chrome) | UI mouse left click on press |
 | Off-hand grip (while pointing at HUD) | UI mouse right click |
@@ -166,8 +166,10 @@ During quantity prompts (“Move how many?”), a **head-locked number pad** app
 - [x] Laser from dominant controller everywhere
 - [x] Remove `ApplyDoorInteraction` (left-grip door cheat)
 - [x] Left X = cast when runes ready
-- [ ] Pull chain on inventory status overlay → stats
-- [ ] Rune status panel + cast click
+- [x] Pull chain on inventory status overlay → stats
+- [x] Rune shelf head-locked status panel + cast click
+- [x] Conversation portrait head-locked status panel
+- [x] Stats head-locked status panel
 
 ## Related docs
 

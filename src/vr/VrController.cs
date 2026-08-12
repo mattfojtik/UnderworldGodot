@@ -77,6 +77,8 @@ public static partial class VrController
 	static Vector2 _lastStatusOverlayHudPos = new(-1f, -1f);
 	static bool _statusOverlayLeftWasPressed;
 	static bool _statusOverlayRightWasPressed;
+	static bool _messageScrollOverlayHovering;
+	static TextureRect _messageScrollOverlayCursor;
 	static bool _dominantGripWasPressed;
 	static bool _dominantTriggerWasPressed;
 	static bool _offHandGripWasPressed;
@@ -745,7 +747,7 @@ public static partial class VrController
 		}
 		else
 		{
-			if (IsActive && uimanager.InGame)
+			if (IsActive && (uimanager.InGame || uimanager.InConversation))
 			{
 				ApplyStatusOverlayPointerInput();
 			}
@@ -1430,6 +1432,15 @@ public static partial class VrController
 		}
 
 		RegisterVrMessageScrollOutput(FindScrollLabelInTree(duplicate));
+		_messageScrollOverlayCursor = new TextureRect
+		{
+			Name = "VrMessageScrollOverlayCursor",
+			Visible = false,
+			MouseFilter = Control.MouseFilterEnum.Ignore,
+			TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+			ZIndex = 100,
+		};
+		_messageScrollViewport.AddChild(_messageScrollOverlayCursor);
 		uimanager.instance?.scroll?.UpdateMessageDisplay();
 		VrDiagLog.Print($"[VR] Message scroll viewport ready ({_messageScrollViewport.Size.X}x{_messageScrollViewport.Size.Y}).");
 		return true;
@@ -1450,6 +1461,19 @@ public static partial class VrController
 
 		if (_messageScrollPanel != null && GodotObject.IsInstanceValid(_messageScrollPanel))
 		{
+			if (_messageScrollOverlayCursor == null || !GodotObject.IsInstanceValid(_messageScrollOverlayCursor))
+			{
+				_messageScrollOverlayCursor = new TextureRect
+				{
+					Name = "VrMessageScrollOverlayCursor",
+					Visible = false,
+					MouseFilter = Control.MouseFilterEnum.Ignore,
+					TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+					ZIndex = 100,
+				};
+				_messageScrollViewport?.AddChild(_messageScrollOverlayCursor);
+			}
+
 			return;
 		}
 
@@ -2118,7 +2142,7 @@ public static partial class VrController
 	static bool HudPointerOwnsLaser() =>
 		VrNumberPad.IsVisible
 		|| NeedsFrontMenuLaser()
-		|| ShouldUseHudMenuPointerOnly()
+		|| (ShouldUseHudMenuPointerOnly() && !_statusOverlayHovering)
 		|| (_hudPanelVisible && _hudPointerHovering);
 
 	static void RetryPendingVrHudSetup()
@@ -3463,6 +3487,7 @@ public static partial class VrController
 		}
 
 		SetHudPanelVisible(true);
+		NotifyVrConversationPanelUpdated();
 	}
 
 	static void ApplyNumberPadPointerInput()
@@ -4925,7 +4950,11 @@ public static partial class VrController
 
 		if (menuOnly && !hovering)
 		{
-			var laserDistance = IsAutomapHudPointerMode() ? HudPointerMaxDistance : 0.2f;
+			var laserDistance = IsAutomapHudPointerMode()
+				? HudPointerMaxDistance
+				: _headOverlaysVisible
+					? Mathf.Max(StatusOverlayPointerMaxDistance, GetStatusScreenDistanceMeters() + 2f)
+					: 0.2f;
 			UpdatePointerLaser(rayOrigin, rayOrigin + rayDir * laserDistance, visible: true);
 
 			_hudPointerHovering = false;

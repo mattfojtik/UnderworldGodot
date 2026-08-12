@@ -221,6 +221,66 @@
             "type": "number",
             "default": 0
         },
+        "vr_rune_bag_offset_x": {
+            "description": "Head-locked rune bag/shelf offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_rune_bag_offset_y": {
+            "description": "Head-locked rune bag/shelf vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_rune_bag_offset_z": {
+            "description": "Head-locked rune bag/shelf depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_stats_offset_x": {
+            "description": "Head-locked stats panel offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_stats_offset_y": {
+            "description": "Head-locked stats panel vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_stats_offset_z": {
+            "description": "Head-locked stats panel depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_rune_shelf_offset_x": {
+            "description": "Head-locked selected-rune casting shelf offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_rune_shelf_offset_y": {
+            "description": "Head-locked selected-rune casting shelf vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_rune_shelf_offset_z": {
+            "description": "Head-locked selected-rune casting shelf depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_conversation_offset_x": {
+            "description": "Head-locked conversation portrait/dialogue offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_conversation_offset_y": {
+            "description": "Head-locked conversation portrait/dialogue vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_conversation_offset_z": {
+            "description": "Head-locked conversation portrait/dialogue depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
         "vr_weapon_anim_offset_x": {
             "description": "Head-locked weapon attack animation offset in metres (X right, Y up).",
             "type": "number",
