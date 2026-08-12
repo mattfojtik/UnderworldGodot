@@ -1445,6 +1445,12 @@ public static partial class VrController
 			return;
 		}
 
+		if (IsOffsetTunePanelHidden(widget.Kind))
+		{
+			widget.Panel.Visible = false;
+			return;
+		}
+
 		if (StatusPanelsAlwaysVisible())
 		{
 			widget.Alpha = 1f;

@@ -36,6 +36,10 @@ public static partial class VrController
 	static MeshInstance3D _offsetTuneOutline;
 	static StandardMaterial3D _offsetTuneOutlineMaterial;
 	static readonly System.Collections.Generic.Dictionary<VrStatusWidgetKind, Label3D> _offsetTunePanelLabels = new();
+	static readonly System.Collections.Generic.HashSet<VrStatusWidgetKind> _offsetTuneHiddenPanels = new();
+	static bool _offsetTuneMessageScrollHidden;
+	static bool _offsetTuneHideWasPressed;
+	static bool _offsetTuneShowAllWasPressed;
 	const float OffsetTuneOutlineThickness = 0.012f;
 	const uint OffsetTuneRenderLayers = main.LayerGeo | main.LayerXFER;
 
@@ -66,6 +70,8 @@ public static partial class VrController
 			HideOffsetTuneLabels();
 			ResetOffsetTunePressState();
 			_offsetTuneDemoSeeded = false;
+			_offsetTuneHiddenPanels.Clear();
+			_offsetTuneMessageScrollHidden = false;
 			return;
 		}
 
@@ -80,10 +86,57 @@ public static partial class VrController
 		ApplyOffsetTuneSelectFromLaser();
 		ApplyOffsetTuneCyclePanel();
 		ApplyOffsetTuneCycleAxis();
+		ApplyOffsetTuneHideShowInput();
 		ApplyOffsetTuneNudge();
 		ApplyOffsetTuneSave();
 		UpdateOffsetTuneLabels();
 		UpdateOffsetTuneSelectionOutline();
+	}
+
+	static bool IsOffsetTunePanelHidden(VrStatusWidgetKind kind) =>
+		IsStatusPanelOffsetTuneActive() && _offsetTuneHiddenPanels.Contains(kind);
+
+	static bool IsOffsetTuneMessageScrollHidden() =>
+		IsStatusPanelOffsetTuneActive() && _offsetTuneMessageScrollHidden;
+
+	static void ApplyOffsetTuneHideShowInput()
+	{
+		if (_leftController == null)
+		{
+			return;
+		}
+
+		// Left X: hide the currently selected panel.
+		var hidePressed = IsButtonPressed(_leftController, SpellCastShortcutActions);
+		if (hidePressed && !_offsetTuneHideWasPressed)
+		{
+			if (IsOffsetTuneMessageScrollSelected())
+			{
+				_offsetTuneMessageScrollHidden = true;
+				VrDiagLog.Print("[VR] Offset tune: hid MessageScroll (X).");
+			}
+			else if (!IsOffsetTuneGlobalYSelected()
+				&& _offsetTuneTargetIndex >= 0
+				&& _offsetTuneTargetIndex < _statusWidgets.Count)
+			{
+				var kind = _statusWidgets[_offsetTuneTargetIndex].Kind;
+				_offsetTuneHiddenPanels.Add(kind);
+				VrDiagLog.Print($"[VR] Offset tune: hid {kind} (X).");
+			}
+		}
+
+		_offsetTuneHideWasPressed = hidePressed;
+
+		// Left Y: show every status panel again.
+		var showPressed = IsButtonPressed(_leftController, HeadOverlayToggleButtonActions);
+		if (showPressed && !_offsetTuneShowAllWasPressed)
+		{
+			_offsetTuneHiddenPanels.Clear();
+			_offsetTuneMessageScrollHidden = false;
+			VrDiagLog.Print("[VR] Offset tune: showed all panels (Y).");
+		}
+
+		_offsetTuneShowAllWasPressed = showPressed;
 	}
 
 	static void EnsureOffsetTuneDemoContent()
@@ -261,6 +314,8 @@ public static partial class VrController
 		_offsetTuneLeftStickClickWasPressed = false;
 		_offsetTuneStickYWasOut = false;
 		_offsetTuneNudgeReadyAtMs = 0f;
+		_offsetTuneHideWasPressed = false;
+		_offsetTuneShowAllWasPressed = false;
 	}
 
 	static int OffsetTuneMessageScrollIndex() => _statusWidgets.Count;
@@ -645,7 +700,7 @@ public static partial class VrController
 
 		foreach (var candidate in _statusWidgets)
 		{
-			if (candidate?.Panel == null || !candidate.Panel.Visible)
+			if (candidate?.Panel == null || !candidate.Panel.Visible || IsOffsetTunePanelHidden(candidate.Kind))
 			{
 				continue;
 			}
@@ -918,6 +973,7 @@ public static partial class VrController
 			+ $"step={stepMm}mm (hold L-grip=fine)\n"
 			+ "aim+trig=select  R-stick Y=nudge\n"
 			+ "off trig/grip=next/prev  dom grip=axis\n"
+			+ "X=hide selected  Y=show all\n"
 			+ "L-stick click=SAVE";
 		_offsetTuneHudLabel.Visible = true;
 		_offsetTuneHudLabel.Layers = OffsetTuneRenderLayers;

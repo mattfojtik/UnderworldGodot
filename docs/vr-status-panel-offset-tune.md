@@ -23,6 +23,8 @@ While active:
 | Dominant **grip** | Cycle axis X → Y → Z (GlobalY is Y-only) |
 | Right stick **Y** (past threshold) | Discrete nudge ± on selected axis |
 | Hold left **grip** while nudging | Fine step **1 mm** (default coarse **10 mm**) |
+| Left **X** | Hide currently selected panel |
+| Left **Y** | Show all panels again |
 | Left stick **click** | Save all offsets to `settings.json` |
 
 Nudges are edge/repeat on the stick, not continuous hand tracking — hand jitter cannot drift values.

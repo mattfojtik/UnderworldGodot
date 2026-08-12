@@ -1672,7 +1672,7 @@ public static partial class VrController
 			return;
 		}
 
-		if (!ShouldShowMessageScrollPanel() || !HasMessageScrollContent())
+		if (!ShouldShowMessageScrollPanel() || !HasMessageScrollContent() || IsOffsetTuneMessageScrollHidden())
 		{
 			_messageScrollPanel.Visible = false;
 			return;
@@ -2246,7 +2246,7 @@ public static partial class VrController
 		}
 
 		var overlayPressed = IsButtonPressed(_leftController, HeadOverlayToggleButtonActions);
-		if (overlayPressed && !_hudMenuToggleWasPressed)
+		if (overlayPressed && !_hudMenuToggleWasPressed && !IsStatusPanelOffsetTuneActive())
 		{
 			SetHeadOverlaysVisible(!_headOverlaysVisible);
 			VrDiagLog.Print($"[VR] Head overlays {(_headOverlaysVisible ? "shown" : "hidden")} (Y).");
@@ -2793,7 +2793,8 @@ public static partial class VrController
 	static void ApplySpellCastShortcutInput()
 	{
 		if (!IsActive || uwsettings.instance.vr_mirror || _leftController == null
-			|| !uimanager.InGame || uimanager.blockinput || IsHudOnMenuScreen())
+			|| !uimanager.InGame || uimanager.blockinput || IsHudOnMenuScreen()
+			|| IsStatusPanelOffsetTuneActive())
 		{
 			_spellCastShortcutWasPressed = false;
 			return;
