@@ -17,9 +17,6 @@ Settings in `user://settings.json`: `vr_diag_log` (default true), `vr_debug`, `v
 
 ## High priority
 
-### Aimed spells / ranged go the wrong way
-~~Magic missile, fireball, and similar aimed projectiles launch in the wrong direction.~~ **Fixed:** player spells (`ProjectileSpell`) and ranged `MissileRelease` use `VrController.ApplyLaserAimToProjectile` (same absolute laser heading/pitch as object throw). Viewport mouse / head aim no longer drives VR projectile yaw.
-
 ### Close object look misses
 Nearby floor objects (e.g. bedroll) sometimes return "you see nothing" when laser should hit. Must fix with controller laser only (not head gaze).
 
@@ -69,7 +66,6 @@ A particular save once hung the game on load; file is gone but **may recur**. If
 
 ## Suggested additions (not yet prioritized)
 
-- **Combat gesture vs laser conflict** while casting / holding missile weapon — confirm modes don’t steal aim
 - **Telekinesis / pole** reach feedback in VR (beam length vs messages)
 - **Options / pause** head-locked UX parity with exploration HUD
 - **Save/load from VR** (hand HUD path) after load-hang awareness
@@ -86,7 +82,8 @@ A particular save once hung the game on load; file is gone but **may recur**. If
 - Use-on key uses world sprite shader (same as Get-held)
 - Head-locked active spells + dedicated chain widget
 - Mage cheat: `'` / `` ` `` / `~` while in-game (message scroll confirms)
-- Chain crop halfway between flat Chains rect and prior tight crop
+- Chain crop tuned for flask click separation
+- **Aimed spells + ranged (complete):** laser absolute aim; targeting cursor on laser (2 m); spawn 1 m along laser (no self-hits); cast SFX on launch; ranged charge/release = stab-plane gesture
 
 ## Confirmed working
 
@@ -98,6 +95,8 @@ A particular save once hung the game on load; file is gone but **may recur**. If
 - Smooth forward locomotion (XROrigin interpolates between ~10 Hz DOS motion steps at XR frame rate)
 - Off-hand Look/Talk laser; dominant Get/Use
 - Head-locked status panels (flasks, inventory, runes, stats, conversation, spells, chain)
+- Aimed projectile spells (magic missile, fireball, …) along dominant laser
+- Ranged weapons: stab-plane draw charge + forward thrust release; laser aim reticle while charging
 
 ## Related tracking
 

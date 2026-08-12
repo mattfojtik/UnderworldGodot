@@ -94,8 +94,14 @@ public static partial class VrController
 	static float _vrHeldRayDistance = 1f;
 	const float InventoryHeldRayDistance = 1.2f;
 	const float UseOnLaserIconDistance = 0.55f;
+	/// <summary>Spell/ranged targeting reticle sits further along the laser than use-on icons.</summary>
+	const float ProjectileAimLaserIconDistance = 2.0f;
+	/// <summary>World metres along the laser before the projectile appears (avoids avatar self-hits).</summary>
+	const float LaserProjectileSpawnDistanceMeters = 1.0f;
 	static MeshInstance3D _useOnLaserIcon;
 	static int _useOnLaserIconItemId = -1;
+	static MeshInstance3D _spellAimLaserIcon;
+	static int _spellAimCursorIndex = -1;
 	static main _gameRoot;
 	static SceneTree _sceneTree;
 	static float _snapTurnCooldown;
@@ -784,6 +790,7 @@ public static partial class VrController
 
 			UpdateHeldObjectVisual();
 			UpdateUseOnLaserIcon();
+			UpdateSpellAimLaserIcon();
 			UpdateMessageScrollPanel();
 			UpdateVrStatusPanels();
 			UpdateAutomapVrKeyboard();
@@ -2130,12 +2137,35 @@ public static partial class VrController
 	/// <summary>Laser is shown while either the hand HUD or head status overlays are open.</summary>
 	static bool ShouldShowVrGameplayPointerLaser()
 	{
-		if (IsVrInCombat() && SpellCasting.currentSpell == null)
+		if (SpellCasting.currentSpell != null)
+		{
+			return true;
+		}
+
+		// Melee combat hides the world laser; ranged charge keeps it so the aim reticle is usable.
+		if (IsVrInCombat())
+		{
+			return IsVrRangedAimActive();
+		}
+
+		return ShouldShowVrPointerLaser();
+	}
+
+	static bool IsVrRangedAimActive()
+	{
+		if (!IsVrInCombat())
 		{
 			return false;
 		}
 
-		return ShouldShowVrPointerLaser() || SpellCasting.currentSpell != null;
+		var weapon = playerdat.PrimaryHandObject;
+		if (combat.isWeapon(weapon) != 2)
+		{
+			return false;
+		}
+
+		return combat.stage is combat.CombatStages.Charging
+			or combat.CombatStages.ReleaseSwing;
 	}
 
 	static bool ShouldShowVrPointerLaser() =>
@@ -3161,9 +3191,12 @@ public static partial class VrController
 	/// <summary>Dominant-hand world aim direction (same ray as Get/Use / throw).</summary>
 	public static Vector3 GetDominantAimRayDir() => GetControllerRayDir();
 
+	/// <summary>Dominant-hand laser origin (controller tip).</summary>
+	public static Vector3 GetAimRayOriginPublic() => GetAimRayOrigin();
+
 	/// <summary>
 	/// Set missile heading/pitch from a world-space laser ray (same path as object throw).
-	/// Caller must clear <see cref="motion.UseAbsoluteProjectileHeading"/> after PrepareProjectileObject.
+	/// Caller must clear via <see cref="ClearLaserProjectileAim"/> after PrepareProjectileObject.
 	/// </summary>
 	public static void ApplyLaserAimToProjectile(Vector3 rayDir)
 	{
@@ -3174,9 +3207,69 @@ public static partial class VrController
 		motion.UseAbsoluteProjectileHeading = true;
 	}
 
+	/// <summary>
+	/// Spawn the projectile partway down the laser so magic/ranged shots clear the avatar
+	/// and don't self-hit on the first motion step.
+	/// </summary>
+	public static void ApplyLaserProjectileSpawnOrigin(Vector3 rayOrigin, Vector3 rayDir)
+	{
+		motion.UseVrLaserSpawnOrigin = false;
+		rayDir = rayDir.Normalized();
+		var spawn = rayOrigin + rayDir * LaserProjectileSpawnDistanceMeters;
+		if (!TryWorldPosToUwSpawn(spawn, out var tileX, out var tileY, out var xpos, out var ypos, out var zpos))
+		{
+			return;
+		}
+
+		motion.projectileXHome = tileX;
+		motion.projectileYHome = tileY;
+		motion.spellXHome = tileX;
+		motion.spellYHome = tileY;
+		motion.VrLaserSpawnTileX = tileX;
+		motion.VrLaserSpawnTileY = tileY;
+		motion.VrLaserSpawnXpos = xpos;
+		motion.VrLaserSpawnYpos = ypos;
+		motion.VrLaserSpawnZpos = zpos;
+		motion.UseVrLaserSpawnOrigin = true;
+	}
+
 	public static void ClearLaserProjectileAim()
 	{
 		motion.UseAbsoluteProjectileHeading = false;
+		motion.UseVrLaserSpawnOrigin = false;
+	}
+
+	static bool TryWorldPosToUwSpawn(
+		Vector3 worldPos,
+		out short tileX,
+		out short tileY,
+		out short xpos,
+		out short ypos,
+		out short zpos)
+	{
+		tileX = tileY = xpos = ypos = zpos = 0;
+		var scale = tileMapRender.godotscale;
+		if (Mathf.Abs(scale.X) < 1e-6f || Mathf.Abs(scale.Y) < 1e-6f || Mathf.Abs(scale.Z) < 1e-6f)
+		{
+			return false;
+		}
+
+		// Inverse of uwObject.XYZToVector3.
+		var uw = new Vector3(worldPos.X / scale.X, worldPos.Y / scale.Y, worldPos.Z / scale.Z);
+		var coordX = (int)Mathf.Round(-uw.X * 16384f);
+		var coordY = (int)Mathf.Round(uw.Z * 16384f);
+		var coordZ = (int)Mathf.Round(uw.Y * 1024f);
+		tileX = (short)(coordX >> 8);
+		tileY = (short)(coordY >> 8);
+		xpos = (short)((coordX >> 5) & 7);
+		ypos = (short)((coordY >> 5) & 7);
+		zpos = (short)Mathf.Clamp(coordZ >> 3, 0, 127);
+		if (!UWTileMap.ValidTile(tileX, tileY))
+		{
+			return false;
+		}
+
+		return true;
 	}
 
 	/// <summary>Refresh body heading and look pitch immediately before a combat strike.</summary>
@@ -4160,6 +4253,138 @@ public static partial class VrController
 		};
 		underworld.AddChild(_useOnLaserIcon);
 		_useOnLaserIconItemId = -1;
+	}
+
+	/// <summary>
+	/// Flat UI swaps to targeting cursor 9/10 for armed spells and ranged charge.
+	/// Mirror that on the dominant laser tip (~1.55 m along the beam).
+	/// </summary>
+	static void UpdateSpellAimLaserIcon()
+	{
+		var cursorIndex = GetProjectileAimCursorIndex();
+
+		if (!IsActive
+			|| uwsettings.instance.vr_mirror
+			|| !uimanager.InGame
+			|| cursorIndex < 0
+			|| playerdat.ObjectInHand != -1
+			|| useon.CurrentItemBeingUsed != null)
+		{
+			if (_spellAimLaserIcon != null)
+			{
+				_spellAimLaserIcon.Visible = false;
+			}
+
+			return;
+		}
+
+		if (_hudPointerHovering || _statusOverlayHovering || GetAimController() == null)
+		{
+			if (_spellAimLaserIcon != null)
+			{
+				_spellAimLaserIcon.Visible = false;
+			}
+
+			return;
+		}
+
+		EnsureSpellAimLaserIcon();
+		if (_spellAimLaserIcon == null)
+		{
+			return;
+		}
+
+		if (_spellAimCursorIndex != cursorIndex)
+		{
+			ApplySpellAimLaserIconArt(cursorIndex);
+		}
+
+		var rayOrigin = GetAimRayOrigin();
+		var rayDir = GetControllerRayDir();
+		_spellAimLaserIcon.Visible = true;
+		_spellAimLaserIcon.GlobalPosition = rayOrigin + rayDir * ProjectileAimLaserIconDistance;
+		if (_xrCamera != null)
+		{
+			_spellAimLaserIcon.LookAt(_xrCamera.GlobalPosition, Vector3.Up);
+			_spellAimLaserIcon.RotateObjectLocal(Vector3.Up, Mathf.Pi);
+		}
+	}
+
+	/// <summary>Cursor art index for spell aim (9/10) or ranged combat charge (9); -1 if none.</summary>
+	static int GetProjectileAimCursorIndex()
+	{
+		var spell = SpellCasting.currentSpell;
+		if (spell != null)
+		{
+			return spell.SpellMajorClass switch
+			{
+				5 => 9,
+				7 => 10,
+				_ => -1,
+			};
+		}
+
+		// Flat sets cursor 9 while charging a ranged weapon — same reticle on the laser.
+		return IsVrRangedAimActive() ? 9 : -1;
+	}
+
+	static void ApplySpellAimLaserIconArt(int cursorIndex)
+	{
+		if (_spellAimLaserIcon?.Mesh is not QuadMesh quad || uimanager.grCursors == null)
+		{
+			return;
+		}
+
+		_spellAimCursorIndex = cursorIndex;
+		var img = uimanager.grCursors.LoadImageAt(cursorIndex);
+		if (img == null)
+		{
+			return;
+		}
+
+		// Cursors are UI art (often with opaque black borders like object sprites).
+		var mat = new StandardMaterial3D
+		{
+			ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+			TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
+			CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+			DisableReceiveShadows = true,
+			Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
+			AlphaScissorThreshold = 0.05f,
+			AlbedoTexture = img,
+			AlbedoColor = Colors.White,
+		};
+		quad.Size = new Vector2(
+			ArtLoader.SpriteScale * img.GetWidth() * 1.25f,
+			ArtLoader.SpriteScale * img.GetHeight() * 1.25f);
+		_spellAimLaserIcon.Mesh.SurfaceSetMaterial(0, mat);
+		_spellAimLaserIcon.MaterialOverride = mat;
+	}
+
+	static void EnsureSpellAimLaserIcon()
+	{
+		if (_spellAimLaserIcon != null && GodotObject.IsInstanceValid(_spellAimLaserIcon))
+		{
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld == null)
+		{
+			return;
+		}
+
+		underworld.GetNodeOrNull<Node>("VrSpellAimLaserIcon")?.QueueFree();
+		_spellAimLaserIcon = new MeshInstance3D
+		{
+			Name = "VrSpellAimLaserIcon",
+			Mesh = new QuadMesh(),
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			Layers = main.LayerGeo | main.LayerXFER,
+			Visible = false,
+		};
+		underworld.AddChild(_spellAimLaserIcon);
+		_spellAimCursorIndex = -1;
 	}
 
 	static float GetCanReachWorldRadius(uimanager.InteractionModes mode)

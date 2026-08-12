@@ -96,4 +96,4 @@ Melee hit height uses head pitch via `VrController.GetHeadPitchUw()` / `SyncComb
 
 ## Deferred
 
-VR ranged attacks and spellcasting — not in this skill.
+VR ranged attacks use the **stab plane** for charge start and the same forward-thrust release as stab. Spellcasting aim is separate (laser + cursor).

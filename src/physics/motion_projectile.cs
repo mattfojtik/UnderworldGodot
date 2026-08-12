@@ -25,6 +25,14 @@ namespace Underworld
         /// <summary>When true, projectile heading comes only from MissileHeading (VR laser throw).</summary>
         public static bool UseAbsoluteProjectileHeading;
 
+        /// <summary>VR: spawn player projectile at hand tile/pos instead of avatar body.</summary>
+        public static bool UseVrLaserSpawnOrigin;
+        public static short VrLaserSpawnTileX;
+        public static short VrLaserSpawnTileY;
+        public static short VrLaserSpawnXpos;
+        public static short VrLaserSpawnYpos;
+        public static short VrLaserSpawnZpos;
+
         /// <summary>
         /// Translate mouse x/y values into a pitch and heading for the projectile to follow by dividing the 3d window in to a grid of discrete pitches and yaws
         /// </summary>
@@ -107,21 +115,32 @@ namespace Underworld
                 projectile.npc_heading = (short)(MissileLauncherHeadingBase & 0x1F);
                 projectile.ProjectileHeading = (ushort)MissileLauncherHeadingBase;
                 projectile.doordir = 0;
-                projectile.zpos = Launcher.zpos;
-                projectile.xpos = Launcher.xpos;
-                projectile.ypos = Launcher.ypos;
 
-                var height = commonObjDat.height(Launcher.item_id);
-                if (height != 0)
+                if (UseVrLaserSpawnOrigin && Launcher == playerdat.playerObject)
                 {
-                    projectile.zpos = (short)((((height * 5) & 0xFF) / 6) + projectile.zpos + (MissilePitch << 1));
-                    if (Launcher == playerdat.playerObject)
+                    // Hand/laser spawn — z already includes controller height; skip body-height lift.
+                    projectile.xpos = VrLaserSpawnXpos;
+                    projectile.ypos = VrLaserSpawnYpos;
+                    projectile.zpos = VrLaserSpawnZpos;
+                }
+                else
+                {
+                    projectile.zpos = Launcher.zpos;
+                    projectile.xpos = Launcher.xpos;
+                    projectile.ypos = Launcher.ypos;
+
+                    var height = commonObjDat.height(Launcher.item_id);
+                    if (height != 0)
                     {
-                        //handle swimming player height adjustment
-                        //Debug.Print($"Swimminglauncher. Projectile needs to be adjusted! {Launcher.a_name}");
-                        if (playerdat.SwimCounter > 0x50)
+                        projectile.zpos = (short)((((height * 5) & 0xFF) / 6) + projectile.zpos + (MissilePitch << 1));
+                        if (Launcher == playerdat.playerObject)
                         {
-                            projectile.zpos = (short)(((MissilePitch<<1) + playerdat.playerObject.zpos + ( commonObjDat.height(playerdat.playerObject.item_id) - (playerdat.SwimCounter >> 3) )) & 0x7F);
+                            //handle swimming player height adjustment
+                            //Debug.Print($"Swimminglauncher. Projectile needs to be adjusted! {Launcher.a_name}");
+                            if (playerdat.SwimCounter > 0x50)
+                            {
+                                projectile.zpos = (short)(((MissilePitch<<1) + playerdat.playerObject.zpos + ( commonObjDat.height(playerdat.playerObject.item_id) - (playerdat.SwimCounter >> 3) )) & 0x7F);
+                            }
                         }
                     }
                 }

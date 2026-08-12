@@ -2,7 +2,10 @@ using Godot;
 
 namespace Underworld
 {
-	/// <summary>Primary-hand pullback / thrust gestures for native VR melee and ranged charging.</summary>
+	/// <summary>
+	/// Primary-hand pullback / thrust gestures for native VR melee and ranged charging.
+	/// Ranged weapons charge only behind the stab plane (same as stab) and release on forward thrust.
+	/// </summary>
 	public static class VrCombatMotion
 	{
 		// Torso-local frame (VrController.WorldToTorsoLocal): X+ right, Y+ up, Z+ forward.
@@ -134,6 +137,18 @@ namespace Underworld
 		{
 			swingType = -1;
 
+			// Ranged (sling/bow): only the stab-plane draw-back starts charge — same as stab.
+			if (combat.isWeapon(playerdat.PrimaryHandObject) == 2)
+			{
+				if (_wentBehindStabPlane)
+				{
+					swingType = 2;
+					return true;
+				}
+
+				return false;
+			}
+
 			if (IsSlashGesture())
 			{
 				swingType = 0;
@@ -236,7 +251,16 @@ namespace Underworld
 
 				case MotionState.Charging:
 					TrackStrokePlanes(local);
-					ApplySlashUpgradeIfNeeded();
+					// Melee can still upgrade to slash mid-charge; ranged stays stab-plane only.
+					if (combat.isWeapon(playerdat.PrimaryHandObject) != 2)
+					{
+						ApplySlashUpgradeIfNeeded();
+					}
+					else
+					{
+						_chargeSwingType = 2;
+						combat.WeaponSwingTypePlayer = 2;
+					}
 
 					if (local.Z < _peakPullbackLocal.Z)
 					{

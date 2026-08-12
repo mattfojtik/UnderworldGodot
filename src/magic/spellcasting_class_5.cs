@@ -47,7 +47,10 @@ namespace Underworld
                 if (VrController.ShouldUseLaserProjectileAim)
                 {
                     // Same absolute laser heading/pitch as object throw (not viewport mouse).
-                    VrController.ApplyLaserAimToProjectile(VrController.GetDominantAimRayDir());
+                    var rayOrigin = VrController.GetAimRayOriginPublic();
+                    var rayDir = VrController.GetDominantAimRayDir();
+                    VrController.ApplyLaserAimToProjectile(rayDir);
+                    VrController.ApplyLaserProjectileSpawnOrigin(rayOrigin, rayDir);
                 }
                 else
                 {
@@ -76,7 +79,14 @@ namespace Underworld
             if (projectile != null)
             {
                 objectInstance.RedrawFull(projectile);
-                //Todo. Some sound effect logic
+                if (caster == playerdat.playerObject)
+                {
+                    // Flat/DOS play cast SFX when the spell is armed; also play on launch so VR hears it.
+                    UWsoundeffects.PlaySoundEffectAtAvatar(
+                        effectno: UWsoundeffects.SoundEffectSpell,
+                        pan: 0x40,
+                        velocityOffset: 0);
+                }
                 return true;
             }
             else

@@ -536,8 +536,11 @@ namespace Underworld
             motion.projectileYHome = playerdat.playerObject.npc_yhome;
             if (VrController.ShouldUseLaserProjectileAim)
             {
-                // Match object throw: absolute heading/pitch from dominant laser.
-                VrController.ApplyLaserAimToProjectile(VrController.GetDominantAimRayDir());
+                // Match object throw: absolute heading/pitch from dominant laser; spawn at hand.
+                var rayOrigin = VrController.GetAimRayOriginPublic();
+                var rayDir = VrController.GetDominantAimRayDir();
+                VrController.ApplyLaserAimToProjectile(rayDir);
+                VrController.ApplyLaserProjectileSpawnOrigin(rayOrigin, rayDir);
             }
             else
             {

@@ -4,9 +4,6 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 
 ## High priority
 
-### Aimed spells / ranged go the wrong way
-- **Fixed:** `ProjectileSpell` + `MissileRelease` use `VrController.ApplyLaserAimToProjectile` (absolute laser heading/pitch, same as throw). `UpdateViewPortMouseFromHeadAim` now maps dominant controller laser, not HMD gaze.
-
 ### Close object look misses ("you see nothing")
 - Nearby objects (e.g. bedroll) sometimes miss in look mode.
 - Controller laser only — no head aim.
@@ -42,7 +39,7 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 ### Other medium
 - Optional world laser when HUD hidden (Y toggle).
 - Snap turn at physics rate (~10 Hz today).
-- Chain vs flask click tuning (mid-crop landed; re-tune if needed).
+- Chain vs flask click tuning (settled for now; re-open if needed).
 - `UpdateViewPortMouseFromControllerAim` vs 3D laser consistency.
 
 ## Low priority / polish
@@ -50,11 +47,10 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 - Laser reach vs `CanReach` Z/pole/swim edge cases.
 - UW2 conversation UI on hand HUD.
 - Document recenter / swim dunk.
-- Attack-mode laser when HUD hidden.
+- Attack-mode laser when HUD hidden (melee); ranged charge keeps laser on.
 
 ## Suggested additions
 
-- Combat gesture vs laser while casting / missile weapon.
 - Telekinesis / pole reach feedback.
 - Options/pause head-locked UX.
 - Save/load from VR after hang awareness.
@@ -68,7 +64,8 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 - Swim origin dunk + body marker; recenter swim-Y fix
 - Use-on key = world sprite shader (Get-held look)
 - Active spells + chain status widgets; mage cheat
-- Chain mid-crop between flat Chains rect and tight crop
+- Chain crop tuned vs flasks
+- **Aimed spells + ranged (complete):** laser absolute aim; cursor at 2 m; spawn 1 m along laser; cast SFX; ranged = stab-plane charge/release
 
 ## Confirmed working
 
@@ -79,14 +76,16 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 - Conversation HUD + scroll selection
 - Snap-turn-only play-space yaw; motionBlend locomotion
 - Off-hand Look/Talk; status panels set
+- Aimed projectile spells along dominant laser
+- Ranged stab-plane charge + laser aim reticle
 
 ## Key files
 
 | File | VR concern |
 |------|------------|
-| `src/vr/VrController.cs` | XR rig, laser, picking, HUD, origin sync, throw aim |
+| `src/vr/VrController.cs` | XR rig, laser, picking, HUD, origin sync, throw/spell aim |
 | `src/vr/VrHudStatusPanels.cs` | Head-locked overlays / offsets |
-| `src/vr/VrCombatMotion.cs` | Melee / ranged charge gestures |
+| `src/vr/VrCombatMotion.cs` | Melee + ranged charge gestures |
 | `src/magic/spellcasting*.cs` | Aimed projectile cast |
 | `main.cs` | `ShouldTickVrInput`, cheats |
 | `src/utility/config.cs` | VR settings / offsets |

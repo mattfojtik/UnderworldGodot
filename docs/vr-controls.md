@@ -97,11 +97,11 @@ Dominant grip/trigger = Get / Use (exploration verbs above).
 
 ### Ranged weapons (bow, sling, etc.)
 
-Melee motion planes do not apply. **Exception:** dominant **trigger** (or a dedicated ranged flow) for aim/fire until a ranged-specific scheme exists.
+**Decided:** use the **stab-plane gesture** — draw the weapon hand behind the stab plane to charge, thrust forward past peak pullback to release (same release as melee stab). While charging, the dominant laser + targeting cursor (flat cursor 9) stay visible; projectiles spawn/aim along that laser (same path as aimed spells / throws). Slash/bash planes do **not** start a ranged charge.
 
 ### Desktop
 
-Flat mouse/keyboard combat paths remain for non-VR. In native VR, melee charge/release should come **only** from `VrCombatMotion`, not mouse right-click.
+Flat mouse/keyboard combat paths remain for non-VR. In native VR, melee and ranged charge/release come **only** from `VrCombatMotion`, not mouse right-click.
 
 ## Spellcasting
 
@@ -172,6 +172,8 @@ During quantity prompts (“Move how many?”), a **head-locked number pad** app
 - [x] Stats head-locked status panel
 - [x] Active spells head-locked status panel
 - [x] Swim play-space dunk + body marker (height-relative)
+- [x] Aimed spells: laser aim, hand/laser spawn, laser targeting cursor, cast SFX
+- [x] Ranged weapons: stab-plane charge/release + laser aim (mirrors spells/throws)
 
 ## Related docs
 
