@@ -3154,6 +3154,31 @@ public static partial class VrController
 		return (short)(pitchIndex * 0x300);
 	}
 
+	/// <summary>True when player projectiles should use controller-laser aim (not viewport mouse).</summary>
+	public static bool ShouldUseLaserProjectileAim =>
+		IsActive && !uwsettings.instance.vr_mirror;
+
+	/// <summary>Dominant-hand world aim direction (same ray as Get/Use / throw).</summary>
+	public static Vector3 GetDominantAimRayDir() => GetControllerRayDir();
+
+	/// <summary>
+	/// Set missile heading/pitch from a world-space laser ray (same path as object throw).
+	/// Caller must clear <see cref="motion.UseAbsoluteProjectileHeading"/> after PrepareProjectileObject.
+	/// </summary>
+	public static void ApplyLaserAimToProjectile(Vector3 rayDir)
+	{
+		rayDir = rayDir.Normalized();
+		motion.MissileLauncherHeadingBase = 0;
+		motion.MissileHeading = GetUwHeadingByteFromRay(rayDir);
+		motion.MissilePitch = GetUwPitchFromRay(rayDir);
+		motion.UseAbsoluteProjectileHeading = true;
+	}
+
+	public static void ClearLaserProjectileAim()
+	{
+		motion.UseAbsoluteProjectileHeading = false;
+	}
+
 	/// <summary>Refresh body heading and look pitch immediately before a combat strike.</summary>
 	public static void SyncCombatAimFromHead()
 	{
@@ -3167,17 +3192,10 @@ public static partial class VrController
 		motion.SyncPlayerObjectHeadingFromCameraYaw(playerdat.playerObject);
 	}
 
-	/// <summary>Map head look to viewport coords for ranged combat and legacy combat helpers.</summary>
+	/// <summary>Map dominant controller laser to viewport coords (ranged / legacy combat helpers).</summary>
 	public static void UpdateViewPortMouseFromHeadAim()
 	{
-		if (_xrCamera == null)
-		{
-			return;
-		}
-
-		var rayOrigin = _xrCamera.GlobalPosition;
-		var rayDir = -_xrCamera.GlobalTransform.Basis.Z;
-		UpdateViewPortMouseFromControllerRay(rayOrigin, rayDir);
+		UpdateViewPortMouseFromControllerRay(GetAimRayOrigin(), GetControllerRayDir());
 	}
 
 	static void RotatePlaySpaceYaw(float radians)

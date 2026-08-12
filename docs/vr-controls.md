@@ -170,6 +170,8 @@ During quantity prompts (“Move how many?”), a **head-locked number pad** app
 - [x] Rune shelf head-locked status panel + cast click
 - [x] Conversation portrait head-locked status panel
 - [x] Stats head-locked status panel
+- [x] Active spells head-locked status panel
+- [x] Swim play-space dunk + body marker (height-relative)
 
 ## Related docs
 

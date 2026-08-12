@@ -42,14 +42,23 @@ namespace Underworld
             motion.projectileYHome = caster.npc_yhome;
             motion.spellXHome = caster.npc_xhome;
             motion.spellYHome = caster.npc_yhome;
-            motion.MissileLauncherHeadingBase = 1;
             if (caster == playerdat.playerObject)
             {
-                motion.InitPlayerProjectileValues();               
+                if (VrController.ShouldUseLaserProjectileAim)
+                {
+                    // Same absolute laser heading/pitch as object throw (not viewport mouse).
+                    VrController.ApplyLaserAimToProjectile(VrController.GetDominantAimRayDir());
+                }
+                else
+                {
+                    motion.MissileLauncherHeadingBase = 1;
+                    motion.InitPlayerProjectileValues();
+                }
             }
             else
             {
                 //npc or spell trap launcher
+                motion.MissileLauncherHeadingBase = 1;
                 if (caster.IsStatic)
                 {                    
                     motion.projectileXHome = caster.tileX;
@@ -63,6 +72,7 @@ namespace Underworld
             motion.MissileFlagB = true;
             var projectile = motion.PrepareProjectileObject(caster);
             motion.MissileFlagB = false;
+            VrController.ClearLaserProjectileAim();
             if (projectile != null)
             {
                 objectInstance.RedrawFull(projectile);

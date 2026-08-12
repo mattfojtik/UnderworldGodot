@@ -534,10 +534,19 @@ namespace Underworld
 
             motion.projectileXHome = playerdat.playerObject.npc_xhome;
             motion.projectileYHome = playerdat.playerObject.npc_yhome;
-            motion.MissileLauncherHeadingBase = 1;
-            motion.InitPlayerProjectileValues();
+            if (VrController.ShouldUseLaserProjectileAim)
+            {
+                // Match object throw: absolute heading/pitch from dominant laser.
+                VrController.ApplyLaserAimToProjectile(VrController.GetDominantAimRayDir());
+            }
+            else
+            {
+                motion.MissileLauncherHeadingBase = 1;
+                motion.InitPlayerProjectileValues();
+            }
 
             var projectile = motion.PrepareProjectileObject(playerdat.playerObject);
+            VrController.ClearLaserProjectileAim();
 
             if (projectile != null)
             {

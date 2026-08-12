@@ -107,9 +107,8 @@ public static partial class VrController
 
 	static Rect2 GetChainsHudRectFixed()
 	{
-		// Flat Chains TextureRect is 40×80 at (1091,486). Crop to the hanging chain without
-		// eating neighbouring flask HUD space (mana starts ~1136).
-		return new Rect2(1100f, 490f, 22f, 68f);
+		// Flat Chains TextureRect is 40×80 at (1091,486). Nudge past the mid-crop toward full size.
+		return new Rect2(1094f, 487f, 34f, 76f);
 	}
 
 	static Rect2 GetInventoryHudRectFixed()

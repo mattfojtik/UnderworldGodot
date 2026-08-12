@@ -1,55 +1,92 @@
 # VR Open Issues (UnderworldGodot)
 
-Last updated Aug 2026 (through commit `b640b53` on `main`).
+Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — keep in sync.
 
 ## High priority
 
+### Aimed spells / ranged go the wrong way
+- **Fixed:** `ProjectileSpell` + `MissileRelease` use `VrController.ApplyLaserAimToProjectile` (absolute laser heading/pitch, same as throw). `UpdateViewPortMouseFromHeadAim` now maps dominant controller laser, not HMD gaze.
+
 ### Close object look misses ("you see nothing")
-- **Symptom:** Nearby objects (e.g. bedroll at feet) sometimes return "you see nothing" in look mode.
-- **Constraint:** Must use **controller laser ray only** — no head aim.
-- **Next ideas:** Improve quad/AABB pick for low floor sprites; ensure physics pick runs when geometric pick misses; verify `RayDistance` / vision refresh before pick; laser must actually point at object (user aims with controller).
+- Nearby objects (e.g. bedroll) sometimes miss in look mode.
+- Controller laser only — no head aim.
+- Ideas: floor-sprite AABB/quad pick; physics fallback; vision refresh before pick.
+
+### Live status-panel offset debug mode
+- In-headset X/Y/Z nudge for every head-locked widget; write through to settings without restart.
+- Widgets: health/mana/compass/inventory/runes/stats/shelf/spells/chain/conversation/weapon/gem/eyes + global Y.
 
 ## Medium priority
 
-### Laser visibility when HUD hidden
-- Current: Y toggle hides HUD and laser; world interact works without visible laser.
-- May want optional world laser when HUD hidden for targeting feedback.
+### Automap keyboard occlusion
+- Typed map text hidden behind on-screen keyboard — keep typing visible.
 
-### Snap turn at motion tick rate
-- `ApplySnapTurn` runs inside `ApplyMotionInputs` (~10 Hz). Could move to `TickRuntime` for snappier feel (verify no double-fire on motion tick frames).
+### Automap pointing: quill tip vs cursor
+- Research DOS + Hank flat first; then align VR.
 
-### `UpdateViewPortMouseFromControllerAim` vs laser
-- World pointer still feeds flat viewport mouse from controller aim for some legacy paths; ensure consistency with 3D laser pick.
+### Death / sapling screens
+- Show death animation only (no full menu/status clutter).
+- Color/palette bug — compare Hank flat before VR-only fix.
+
+### Inventory / conversation hit targets
+- Invalid inventory release keeps object in hand — keep or expand place hitboxes.
+- Conversation lines hard to hit — widen strips / targeting assist.
+
+### Playtests
+- Sleep / dreaming.
+- Level 1 playthrough.
+
+### Load hang (lost repro)
+- One save hung on load; file lost. Watch for recurrence; capture save + logs if it returns.
+
+### Other medium
+- Optional world laser when HUD hidden (Y toggle).
+- Snap turn at physics rate (~10 Hz today).
+- Chain vs flask click tuning (mid-crop landed; re-tune if needed).
+- `UpdateViewPortMouseFromControllerAim` vs 3D laser consistency.
 
 ## Low priority / polish
 
-- **VR laser reach vs `CanReach` (minor):** Laser tip uses avatar-centered sphere radius from `PickupDistance`/`UseDistance`; game `CanReach` also checks Z height and pole/swim offsets. Edge-case mismatch with "you cannot reach that" possible — refine if needed.
-- Automap in VR (`InAutomap` — `ShouldTickVrInput` includes it but UX untested)
-- UW2 conversation UI layout on hand HUD panel
-- Attack mode laser when HUD hidden (no visible laser today)
-- Document B-recenter behavior for new players
+- Laser reach vs `CanReach` Z/pole/swim edge cases.
+- UW2 conversation UI on hand HUD.
+- Document recenter / swim dunk.
+- Attack-mode laser when HUD hidden.
+
+## Suggested additions
+
+- Combat gesture vs laser while casting / missile weapon.
+- Telekinesis / pole reach feedback.
+- Options/pause head-locked UX.
+- Save/load from VR after hang awareness.
+- Cutscene lighting/palette beyond death.
+- Lefty/dominant regression after offset debug.
+- Periodic Hank upstream merge + parity re-test.
+
+## Recently landed (regression watch)
+
+- Talk range × world scale; Talk/Look not body-sphere clamped
+- Swim origin dunk + body marker; recenter swim-Y fix
+- Use-on key = world sprite shader (Get-held look)
+- Active spells + chain status widgets; mage cheat
+- Chain mid-crop between flat Chains rect and tight crop
 
 ## Confirmed working
 
 - Native VR object pickup / door / world interact via 3D laser pick
-- VR gameplay laser reach anchored to avatar `CanReach` radius (arm extension shortens beam)
-- VR inventory → held object on laser; laser-only throw/drop direction
-- VR chargen on-screen keyboard; intro menu TV brightness
-- Wall/floor/ceiling look via tile surface raycast
-- Far look → "you see nothing" when beyond vision
-- Inventory rainbow outlines after HUD SubViewport move
-- Conversation UI: HUD auto-show, laser on panel, numbered scroll selection
-- Play-space rotation decoupled from gradual body-yaw drift (snap turn only)
-- Forward locomotion: smooth XROrigin follow via `motionBlend` interpolation between DOS motion ticks (`EndMotionStep` / `GetDisplayFloorPos`, blend from `main._PhysicsProcess`)
+- VR inventory → held object on laser; throw/drop
+- Chargen keyboard; intro menu TV
+- Tile look; far "you see nothing"
+- Conversation HUD + scroll selection
+- Snap-turn-only play-space yaw; motionBlend locomotion
+- Off-hand Look/Talk; status panels set
 
 ## Key files
 
 | File | VR concern |
 |------|------------|
-| `src/vr/VrController.cs` | XR rig, laser, picking, HUD, origin sync |
-| `main.cs` | `ShouldTickVrInput`, motion tick gate |
-| `src/ui/uimanager.cs` | `InGame`, `blockinput`, `InConversation` |
-| `src/conversation/conversationinitialisation.cs` | `OnConversationStarted` |
-| `src/physics/motion_player.cs` | VR yaw via `TryGetMotionYaw`, body alignment |
-| `src/player/playerdatcamera.cs` | Gimbal vs head vision in VR |
-| `src/utility/config.cs` | VR settings |
+| `src/vr/VrController.cs` | XR rig, laser, picking, HUD, origin sync, throw aim |
+| `src/vr/VrHudStatusPanels.cs` | Head-locked overlays / offsets |
+| `src/vr/VrCombatMotion.cs` | Melee / ranged charge gestures |
+| `src/magic/spellcasting*.cs` | Aimed projectile cast |
+| `main.cs` | `ShouldTickVrInput`, cheats |
+| `src/utility/config.cs` | VR settings / offsets |

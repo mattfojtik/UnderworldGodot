@@ -161,22 +161,18 @@ namespace Underworld
             motion.projectileXHome = playerdat.playerObject.npc_xhome;
             motion.projectileYHome = playerdat.playerObject.npc_yhome;
 
-            rayDir = rayDir.Normalized();
-            var headingByte = VrController.GetUwHeadingByteFromRay(rayDir);
-            var pitch = VrController.GetUwPitchFromRay(rayDir);
-            var isThrow = rayDir.Y > -0.35f;
+			rayDir = rayDir.Normalized();
+			var headingByte = VrController.GetUwHeadingByteFromRay(rayDir);
+			var isThrow = rayDir.Y > -0.35f;
 
-            if (isThrow)
-            {
-                motion.MissileLauncherHeadingBase = 0;
-                motion.MissileHeading = headingByte;
-                motion.MissilePitch = pitch;
-                motion.UseAbsoluteProjectileHeading = true;
-                motion.RangedAmmoItemID = srcObject.item_id;
-                motion.RangedAmmoType = 0xF;
-                ThrownObject = motion.PrepareProjectileObject(playerdat.playerObject);
-                motion.UseAbsoluteProjectileHeading = false;
-                if (ThrownObject != null)
+			if (isThrow)
+			{
+				VrController.ApplyLaserAimToProjectile(rayDir);
+				motion.RangedAmmoItemID = srcObject.item_id;
+				motion.RangedAmmoType = 0xF;
+				ThrownObject = motion.PrepareProjectileObject(playerdat.playerObject);
+				VrController.ClearLaserProjectileAim();
+				if (ThrownObject != null)
                 {
                     ThrownObject.is_quant = srcObject.is_quant;
                     ThrownObject.link = srcObject.link;
