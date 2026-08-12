@@ -182,6 +182,14 @@ public class uwsettings
     public float vr_rune_shelf_offset_x { get; set; } = 0f;
     public float vr_rune_shelf_offset_y { get; set; } = 0f;
     public float vr_rune_shelf_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked active spell icons offset in metres (X = right, Y = up, Z = farther from headset).</summary>
+    public float vr_active_spells_offset_x { get; set; } = 0f;
+    public float vr_active_spells_offset_y { get; set; } = 0f;
+    public float vr_active_spells_offset_z { get; set; } = 0f;
+    /// <summary>Head-locked paperdoll pull-chain offset in metres (X = right, Y = up, Z = farther from headset).</summary>
+    public float vr_chain_offset_x { get; set; } = 0f;
+    public float vr_chain_offset_y { get; set; } = 0f;
+    public float vr_chain_offset_z { get; set; } = 0f;
     /// <summary>Head-locked conversation portrait/dialogue offset in metres (X = right, Y = up, Z = farther from headset).</summary>
     public float vr_conversation_offset_x { get; set; } = 0f;
     public float vr_conversation_offset_y { get; set; } = 0f;

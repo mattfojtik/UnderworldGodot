@@ -838,7 +838,13 @@ public partial class main : Node3D
 			{
 				if (keyinput.Pressed)
 				{
-					switch (keyinput.Keycode)
+					var key = keyinput.Keycode;
+					if (key == Key.None || key == Key.Unknown)
+					{
+						key = keyinput.PhysicalKeycode;
+					}
+
+					switch (key)
 					{
 						case Key.F1: //open options menu
 							uimanager.InteractionModeToggle(0); break;
@@ -921,6 +927,8 @@ public partial class main : Node3D
 								break;
 							}
 						case Key.Apostrophe:
+						case Key.Quoteleft: // ` key (often documented as "~")
+						case Key.Asciitilde:
 							{
 								//give full mage abilities
 								playerdat.max_mana = 60;
@@ -933,6 +941,7 @@ public partial class main : Node3D
 									playerdat.SetRune(r, true);
 								}
 								playerdat.PlayerStatusUpdate();
+								uimanager.AddToMessageScroll("Cheat: all runes, mana 60, casting 30.");
 								break;
 							}
 					}

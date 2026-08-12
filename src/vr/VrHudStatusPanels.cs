@@ -15,6 +15,8 @@ public static partial class VrController
 		RuneBag,
 		Stats,
 		SelectedRunes,
+		ActiveSpells,
+		Chain,
 		Conversation,
 		WeaponAnim,
 		PowerGem,
@@ -105,80 +107,81 @@ public static partial class VrController
 
 	static Rect2 GetChainsHudRectFixed()
 	{
-		var chains = uimanager.instance?.Chains;
-		if (chains == null)
-		{
-			return new Rect2(1091f, 486f, 40f, 80f);
-		}
-
-		var pos = chains.Position;
-		if (chains.GetParent() is Control parent)
-		{
-			pos += parent.Position;
-		}
-
-		return new Rect2(pos, chains.Size);
-	}
-
-	static Rect2 ExpandPaperdollHudRectWithChain(Rect2 panelArtRect)
-	{
-		return panelArtRect.Merge(GetChainsHudRectFixed());
+		// Flat Chains TextureRect is 40×80 at (1091,486). Crop to the hanging chain without
+		// eating neighbouring flask HUD space (mana starts ~1136).
+		return new Rect2(1100f, 490f, 22f, 68f);
 	}
 
 	static Rect2 GetInventoryHudRectFixed()
 	{
 		var ui = uimanager.instance;
-		Rect2 artRect;
 		if (ui?.PanelInventory != null && ui.PanelInventoryArt != null)
 		{
-			artRect = new Rect2(
+			return new Rect2(
 				ui.PanelInventory.Position + ui.PanelInventoryArt.Position,
 				ui.PanelInventoryArt.Size);
 		}
-		else
-		{
-			artRect = UWClass._RES == UWClass.GAME_UW2
-				? new Rect2(944f, 28f, 332f, 448f)
-				: new Rect2(944f, 28f, 332f, 456f);
-		}
 
-		return ExpandPaperdollHudRectWithChain(artRect);
+		return UWClass._RES == UWClass.GAME_UW2
+			? new Rect2(944f, 28f, 332f, 448f)
+			: new Rect2(944f, 28f, 332f, 456f);
 	}
 
 	static Rect2 GetRuneBagHudRectFixed()
 	{
 		var ui = uimanager.instance;
-		Rect2 artRect;
 		if (ui?.PanelRuneBag != null && ui.PanelRuneBagArt != null)
 		{
-			artRect = new Rect2(
+			return new Rect2(
 				ui.PanelRuneBag.Position + ui.PanelRuneBagArt.Position,
 				ui.PanelRuneBagArt.Size);
 		}
-		else
-		{
-			artRect = new Rect2(944f, 56f, 316f, 448f);
-		}
 
-		return ExpandPaperdollHudRectWithChain(artRect);
+		return new Rect2(944f, 56f, 316f, 448f);
 	}
 
 	static Rect2 GetStatsHudRectFixed()
 	{
 		var ui = uimanager.instance;
-		Rect2 artRect;
 		if (ui?.PanelStats != null && ui.PanelStatsArt != null)
 		{
-			artRect = new Rect2(
+			return new Rect2(
 				ui.PanelStats.Position + ui.PanelStatsArt.Position,
 				ui.PanelStatsArt.Size);
 		}
-		else
+
+		return new Rect2(944f, 28f, 332f, 456f);
+	}
+
+	static Rect2 GetActiveSpellsHudRectFixed()
+	{
+		var icons = uimanager.instance?.ActiveSpellIcons;
+		if (icons == null || icons.Length == 0 || icons[0] == null)
 		{
-			artRect = new Rect2(944f, 28f, 332f, 456f);
+			return new Rect2(212f, 552f, 192f, 72f);
 		}
 
-		return ExpandPaperdollHudRectWithChain(artRect);
+		var rect = default(Rect2);
+		var haveRect = false;
+		foreach (var icon in icons)
+		{
+			if (icon == null)
+			{
+				continue;
+			}
+
+			var pos = icon.Position;
+			if (icon.GetParent() is Control parent)
+			{
+				pos += parent.Position;
+			}
+
+			var iconRect = new Rect2(pos, icon.Size);
+			rect = haveRect ? rect.Merge(iconRect) : iconRect;
+			haveRect = true;
+		}
+
+		return haveRect ? rect : new Rect2(212f, 552f, 192f, 72f);
 	}
 
 	static Rect2 GetSelectedRunesHudRectFixed()
@@ -260,6 +263,31 @@ public static partial class VrController
 	{
 		var runes = uimanager.instance?.SelectedRunes;
 		return uimanager.InGame && runes is { Length: > 0 } && runes[0] != null && runes[0].Visible;
+	}
+
+	static bool IsActiveSpellsPanelActive()
+	{
+		var icons = uimanager.instance?.ActiveSpellIcons;
+		if (!uimanager.InGame || icons == null)
+		{
+			return false;
+		}
+
+		foreach (var icon in icons)
+		{
+			if (icon != null && icon.Visible && icon.Texture != null)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	static bool IsChainPanelActive()
+	{
+		return uimanager.InGame
+			&& (IsInventoryPanelActive() || IsRuneBagPanelActive() || IsStatsPanelActive());
 	}
 
 	static TextureRect GetWeaponAnimRect()
@@ -433,6 +461,14 @@ public static partial class VrController
 				settings.vr_rune_shelf_offset_x,
 				settings.vr_rune_shelf_offset_y,
 				settings.vr_rune_shelf_offset_z),
+			VrStatusWidgetKind.ActiveSpells => new Vector3(
+				settings.vr_active_spells_offset_x,
+				settings.vr_active_spells_offset_y,
+				settings.vr_active_spells_offset_z),
+			VrStatusWidgetKind.Chain => new Vector3(
+				settings.vr_chain_offset_x,
+				settings.vr_chain_offset_y,
+				settings.vr_chain_offset_z),
 			VrStatusWidgetKind.Conversation => new Vector3(
 				settings.vr_conversation_offset_x,
 				settings.vr_conversation_offset_y,
@@ -553,10 +589,21 @@ public static partial class VrController
 			return;
 		}
 
+		if (widget.Kind == VrStatusWidgetKind.ActiveSpells)
+		{
+			SyncActiveSpellsVisuals(widget);
+			return;
+		}
+
+		if (widget.Kind == VrStatusWidgetKind.Chain)
+		{
+			SyncChainVisuals(widget);
+			return;
+		}
+
 		if (UsesPanelSubtreeLayout(widget.Kind))
 		{
 			SyncControlSubtree(widget.Source, widget.Duplicate);
-			SyncChainsCompanion(widget);
 			return;
 		}
 
@@ -706,6 +753,57 @@ public static partial class VrController
 			return true;
 		}
 
+		if (widget.Kind == VrStatusWidgetKind.ActiveSpells)
+		{
+			var spellsRoot = new Control
+			{
+				Name = "VrActiveSpellsRoot",
+				Position = Vector2.Zero,
+				Size = widget.HudRect.Size,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+			};
+			widget.Viewport.AddChild(spellsRoot);
+			widget.Duplicate = spellsRoot;
+			PopulateActiveSpellsDuplicate(widget);
+			widget.OverlayCursor = new TextureRect
+			{
+				Name = $"VrStatusOverlayCursor_{widget.Kind}",
+				Visible = false,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+				TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+				ZIndex = 100,
+			};
+			widget.Viewport.AddChild(widget.OverlayCursor);
+			return true;
+		}
+
+		if (widget.Kind == VrStatusWidgetKind.Chain)
+		{
+			var chainRoot = new TextureRect
+			{
+				Name = "VrChainRoot",
+				Position = Vector2.Zero,
+				Size = widget.HudRect.Size,
+				Texture = CreateChainAtlasTexture(),
+				TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+				ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+				StretchMode = TextureRect.StretchModeEnum.Scale,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+			};
+			widget.Viewport.AddChild(chainRoot);
+			widget.Duplicate = chainRoot;
+			widget.OverlayCursor = new TextureRect
+			{
+				Name = $"VrStatusOverlayCursor_{widget.Kind}",
+				Visible = false,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+				TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+				ZIndex = 100,
+			};
+			widget.Viewport.AddChild(widget.OverlayCursor);
+			return true;
+		}
+
 		var duplicate = widget.Source.Duplicate() as Control;
 		if (duplicate == null)
 		{
@@ -719,7 +817,6 @@ public static partial class VrController
 		{
 			duplicate.Position = GetPanelDuplicateOffset(widget.Source as Control, widget.HudRect);
 			duplicate.Scale = Vector2.One;
-			TryAttachChainsCompanion(widget);
 		}
 		else
 		{
@@ -748,31 +845,108 @@ public static partial class VrController
 
 	static void TryAttachChainsCompanion(VrStatusWidget widget)
 	{
-		if (widget.Kind is not (VrStatusWidgetKind.Inventory or VrStatusWidgetKind.RuneBag or VrStatusWidgetKind.Stats))
+		// Chain is its own head-locked widget now (avoids overlapping mana flask HUD space).
+		_ = widget;
+	}
+
+	static void PopulateActiveSpellsDuplicate(VrStatusWidget widget)
+	{
+		if (widget.Duplicate == null)
 		{
 			return;
 		}
 
-		if (widget.Viewport == null)
+		foreach (var child in widget.Duplicate.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		var icons = uimanager.instance?.ActiveSpellIcons;
+		if (icons == null)
 		{
 			return;
 		}
 
-		var chainDup = new TextureRect
+		var shelfRect = widget.HudRect;
+		for (var i = 0; i < icons.Length; i++)
 		{
-			Name = "VrChainsCompanion",
-			MouseFilter = Control.MouseFilterEnum.Ignore,
-			TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-			ZIndex = 50,
-		};
+			var src = icons[i];
+			if (src == null)
+			{
+				continue;
+			}
 
-		var chainRect = GetChainsHudRectFixed();
-		chainDup.Position = chainRect.Position - widget.HudRect.Position;
-		chainDup.Size = chainRect.Size;
-		chainDup.Visible = true;
-		chainDup.SelfModulate = Colors.White;
-		chainDup.Texture = CreateChainAtlasTexture();
-		widget.Viewport.AddChild(chainDup);
+			var dup = src.Duplicate() as TextureRect;
+			if (dup == null)
+			{
+				continue;
+			}
+
+			var pos = src.Position;
+			if (src.GetParent() is Control parent)
+			{
+				pos += parent.Position;
+			}
+
+			dup.Name = $"ActiveSpell{i}";
+			dup.Position = pos - shelfRect.Position;
+			dup.Size = src.Size;
+			dup.Scale = Vector2.One;
+			dup.MouseFilter = Control.MouseFilterEnum.Ignore;
+			widget.Duplicate.AddChild(dup);
+		}
+	}
+
+	static void SyncActiveSpellsVisuals(VrStatusWidget widget)
+	{
+		var icons = uimanager.instance?.ActiveSpellIcons;
+		if (icons == null || widget.Duplicate == null)
+		{
+			return;
+		}
+
+		widget.HudRect = GetActiveSpellsHudRectFixed();
+		for (var i = 0; i < icons.Length; i++)
+		{
+			var src = icons[i];
+			var dup = widget.Duplicate.GetNodeOrNull<TextureRect>($"ActiveSpell{i}");
+			if (src == null || dup == null)
+			{
+				continue;
+			}
+
+			var pos = src.Position;
+			if (src.GetParent() is Control parent)
+			{
+				pos += parent.Position;
+			}
+
+			dup.Texture = src.Texture;
+			dup.Material = src.Material;
+			dup.Visible = src.Visible;
+			dup.Modulate = src.Modulate;
+			dup.SelfModulate = Colors.White;
+			dup.Position = pos - widget.HudRect.Position;
+			dup.Size = src.Size;
+			dup.Scale = Vector2.One;
+		}
+	}
+
+	static void SyncChainVisuals(VrStatusWidget widget)
+	{
+		if (widget.Duplicate is not TextureRect chain)
+		{
+			return;
+		}
+
+		widget.HudRect = GetChainsHudRectFixed();
+		chain.Position = Vector2.Zero;
+		chain.Size = widget.HudRect.Size;
+		chain.Visible = true;
+		if (chain.Texture == null)
+		{
+			chain.Texture = CreateChainAtlasTexture();
+		}
 	}
 
 	/// <summary>
@@ -1032,6 +1206,29 @@ public static partial class VrController
 			});
 		}
 
+		if (ui.ActiveSpellIcons is { Length: > 0 } && ui.ActiveSpellIcons[0] != null)
+		{
+			TryAddStatusWidget(new VrStatusWidget
+			{
+				Kind = VrStatusWidgetKind.ActiveSpells,
+				HudRect = GetActiveSpellsHudRectFixed(),
+				Source = ui.ActiveSpellIcons[0],
+				FadeWhenInactive = true,
+			});
+		}
+
+		CanvasItem chainSource = ui.Chains != null ? ui.Chains : GetHudPlaceholderRect();
+		if (chainSource != null)
+		{
+			TryAddStatusWidget(new VrStatusWidget
+			{
+				Kind = VrStatusWidgetKind.Chain,
+				HudRect = GetChainsHudRectFixed(),
+				Source = chainSource,
+				ShowWhileInGame = true,
+			});
+		}
+
 		var conversationPanel = GetConversationPanel();
 		if (conversationPanel != null)
 		{
@@ -1123,6 +1320,8 @@ public static partial class VrController
 			VrStatusWidgetKind.RuneBag => IsRuneBagPanelActive(),
 			VrStatusWidgetKind.Stats => IsStatsPanelActive(),
 			VrStatusWidgetKind.SelectedRunes => IsSelectedRunesShelfActive(),
+			VrStatusWidgetKind.ActiveSpells => IsActiveSpellsPanelActive(),
+			VrStatusWidgetKind.Chain => IsChainPanelActive(),
 			VrStatusWidgetKind.Conversation => IsConversationPanelActive(),
 			VrStatusWidgetKind.WeaponAnim => IsWeaponAnimActive(),
 			VrStatusWidgetKind.PowerGem => IsPowerGemActive(),
@@ -1139,6 +1338,7 @@ public static partial class VrController
 			VrStatusWidgetKind.WeaponAnim => IsWeaponAnimActive() || IsWeaponAnimStageActive(),
 			VrStatusWidgetKind.Eyes => AreEyesActive(),
 			VrStatusWidgetKind.Conversation => IsConversationPanelActive(),
+			VrStatusWidgetKind.ActiveSpells => IsActiveSpellsPanelActive(),
 			_ => false,
 		};
 	}
@@ -1269,6 +1469,14 @@ public static partial class VrController
 		else if (widget.Kind == VrStatusWidgetKind.SelectedRunes)
 		{
 			widget.HudRect = GetSelectedRunesHudRectFixed();
+		}
+		else if (widget.Kind == VrStatusWidgetKind.ActiveSpells)
+		{
+			widget.HudRect = GetActiveSpellsHudRectFixed();
+		}
+		else if (widget.Kind == VrStatusWidgetKind.Chain)
+		{
+			widget.HudRect = GetChainsHudRectFixed();
 		}
 		else if (widget.Kind == VrStatusWidgetKind.Conversation)
 		{
@@ -1590,12 +1798,34 @@ public static partial class VrController
 		}
 	}
 
+	/// <summary>Call when an active spell icon appears or clears.</summary>
+	public static void NotifyVrActiveSpellsUpdated()
+	{
+		if (!uwsettings.instance.vr_status_panels || !IsActive || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		InitStatusWidgetsIfNeeded();
+		foreach (var widget in _statusWidgets)
+		{
+			if (widget.Kind == VrStatusWidgetKind.ActiveSpells && IsActiveSpellsPanelActive())
+			{
+				widget.HideAfterTime = -1f;
+				widget.Alpha = 1f;
+				widget.HoldWasActive = true;
+			}
+		}
+	}
+
 	static bool IsStatusWidgetClickable(VrStatusWidgetKind kind)
 	{
 		return kind is VrStatusWidgetKind.Inventory
 			or VrStatusWidgetKind.RuneBag
 			or VrStatusWidgetKind.Stats
 			or VrStatusWidgetKind.SelectedRunes
+			or VrStatusWidgetKind.ActiveSpells
+			or VrStatusWidgetKind.Chain
 			or VrStatusWidgetKind.Conversation
 			or VrStatusWidgetKind.HealthFlask
 			or VrStatusWidgetKind.ManaFlask
@@ -1781,7 +2011,12 @@ public static partial class VrController
 			}
 
 			var distance = rayOrigin.DistanceTo(candidateHit);
-			if (distance >= bestDistance)
+			// Prefer the thin chain over neighbouring flasks when both quads are nearly equidistant.
+			var preferChainOverFlask = candidate.Kind == VrStatusWidgetKind.Chain
+				&& widget != null
+				&& widget.Kind is VrStatusWidgetKind.HealthFlask or VrStatusWidgetKind.ManaFlask
+				&& distance <= bestDistance + 0.08f;
+			if (distance >= bestDistance && !preferChainOverFlask)
 			{
 				continue;
 			}
@@ -2005,10 +2240,12 @@ public static partial class VrController
 					PushVrHudMouseClick(hudPos, MouseButton.Left);
 				}
 			}
-			else if (IsHudPointOverChains(hudPos)
-				&& widget.Kind is VrStatusWidgetKind.Inventory
-					or VrStatusWidgetKind.RuneBag
-					or VrStatusWidgetKind.Stats)
+			else if (widget?.Kind == VrStatusWidgetKind.Chain
+				|| (widget != null
+					&& IsHudPointOverChains(hudPos)
+					&& widget.Kind is VrStatusWidgetKind.Inventory
+						or VrStatusWidgetKind.RuneBag
+						or VrStatusWidgetKind.Stats))
 			{
 				uimanager.ChangePanels();
 			}

@@ -43,6 +43,7 @@ namespace Underworld
                 instance.ActiveSpellIcons[index].Texture = grSpells.LoadImageAt(spellno);
                 instance.ActiveSpellIcons[index].Material = grSpells.GetMaterial(spellno);
                 EnableDisable(instance.ActiveSpellIcons[index], true);
+                VrController.NotifyVrActiveSpellsUpdated();
             }
         }
 
@@ -53,6 +54,7 @@ namespace Underworld
             instance.ActiveSpellIcons[index].Texture = null;
             instance.ActiveSpellIcons[index].Material = null;
             EnableDisable(instance.ActiveSpellIcons[index], false);
+            VrController.NotifyVrActiveSpellsUpdated();
         }
 
 

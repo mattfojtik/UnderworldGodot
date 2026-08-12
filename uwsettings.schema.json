@@ -266,6 +266,36 @@
             "type": "number",
             "default": 0
         },
+        "vr_active_spells_offset_x": {
+            "description": "Head-locked active spell icons offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_active_spells_offset_y": {
+            "description": "Head-locked active spell icons vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_active_spells_offset_z": {
+            "description": "Head-locked active spell icons depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_chain_offset_x": {
+            "description": "Head-locked paperdoll pull-chain offset in metres (X right, Y up).",
+            "type": "number",
+            "default": 0
+        },
+        "vr_chain_offset_y": {
+            "description": "Head-locked paperdoll pull-chain vertical offset in metres; negative lowers.",
+            "type": "number",
+            "default": 0
+        },
+        "vr_chain_offset_z": {
+            "description": "Head-locked paperdoll pull-chain depth offset in metres; positive pushes farther from headset.",
+            "type": "number",
+            "default": 0
+        },
         "vr_conversation_offset_x": {
             "description": "Head-locked conversation portrait/dialogue offset in metres (X right, Y up).",
             "type": "number",

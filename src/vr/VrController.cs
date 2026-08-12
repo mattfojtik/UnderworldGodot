@@ -93,6 +93,9 @@ public static partial class VrController
 	static int _vrHeldObjectIndex = -1;
 	static float _vrHeldRayDistance = 1f;
 	const float InventoryHeldRayDistance = 1.2f;
+	const float UseOnLaserIconDistance = 0.55f;
+	static MeshInstance3D _useOnLaserIcon;
+	static int _useOnLaserIconItemId = -1;
 	static main _gameRoot;
 	static SceneTree _sceneTree;
 	static float _snapTurnCooldown;
@@ -780,6 +783,7 @@ public static partial class VrController
 			}
 
 			UpdateHeldObjectVisual();
+			UpdateUseOnLaserIcon();
 			UpdateMessageScrollPanel();
 			UpdateVrStatusPanels();
 			UpdateAutomapVrKeyboard();
@@ -2567,6 +2571,34 @@ public static partial class VrController
 		return _motionStepPrevFloor.Lerp(_motionStepCurrFloor, _motionBlend);
 	}
 
+	/// <summary>
+	/// Flat swimming lowers the camera by SwimCounter game units. Scale that drop by the
+	/// tracked headset height vs DOS eye height so tall/short players sink proportionally.
+	/// </summary>
+	static float GetVrSwimOriginYOffset()
+	{
+		if (!uimanager.InGame || (playerdat.TileState & 0x11) == 0)
+		{
+			return 0f;
+		}
+
+		var bobZ = playerdat.CameraBobZAdjust_dseg_67d6_33CE;
+		if (bobZ >= 0)
+		{
+			return 0f;
+		}
+
+		var gameDropMeters = (bobZ / 1024f) * tileMapRender.godotscale.Y; // negative
+		if (_xrCamera == null || _xrOrigin == null)
+		{
+			return gameDropMeters;
+		}
+
+		var trackedEyeHeight = Mathf.Max(0.05f, _xrCamera.Position.Y);
+		var scale = trackedEyeHeight / Mathf.Max(0.05f, GameEyeHeightMeters);
+		return gameDropMeters * scale;
+	}
+
 	static Vector3 GetAvatarFloorPos()
 	{
 		var feet = uwObject.XYZToVector3(
@@ -2598,6 +2630,7 @@ public static partial class VrController
 		// Follow avatar by delta only — preserves the sticky XZ offset from B-recenter.
 		// Interpolate between DOS motion ticks so the play space does not snap at ~10 Hz.
 		var floorPos = GetDisplayFloorPos();
+		floorPos += Vector3.Up * GetVrSwimOriginYOffset();
 		if (!_xrOriginFloorInitialized)
 		{
 			_xrOrigin.GlobalPosition = floorPos;
@@ -2676,11 +2709,14 @@ public static partial class VrController
 
 		SyncXrOriginFromGimbal();
 
-		var floorPos = GetAvatarFloorPos();
+		// XZ snap only. Y must stay consistent with SyncXrOriginFromGimbal's swim offset —
+		// storing a floor pos without swim made each recenter apply another downward delta.
+		var floorPos = GetDisplayFloorPos();
+		var swimOffset = GetVrSwimOriginYOffset();
 		var headWorld = _xrCamera.GlobalPosition;
 		var delta = new Vector3(floorPos.X - headWorld.X, 0f, floorPos.Z - headWorld.Z);
 		_xrOrigin.GlobalPosition += delta;
-		_lastSyncedDisplayFloorPos = floorPos;
+		_lastSyncedDisplayFloorPos = floorPos + Vector3.Up * swimOffset;
 		_motionStepPrevFloor = GetAvatarFloorPos();
 		_motionStepCurrFloor = _motionStepPrevFloor;
 		_motionStepInitialized = true;
@@ -3994,8 +4030,118 @@ public static partial class VrController
 		node.GlobalPosition = holdPos;
 		if (_xrCamera != null)
 		{
+			// QuadMesh faces +Z; LookAt aims -Z at the camera — flip so the sprite faces the player.
 			node.LookAt(_xrCamera.GlobalPosition, Vector3.Up);
+			node.RotateObjectLocal(Vector3.Up, Mathf.Pi);
 		}
+	}
+
+	/// <summary>
+	/// Flat UI swaps the mouse cursor to the item when Use-on is armed (keys, oil, etc.).
+	/// Show the same world object sprite used by Get-held items (black border + object shader).
+	/// </summary>
+	static void UpdateUseOnLaserIcon()
+	{
+		var useItem = useon.CurrentItemBeingUsed?.itemBeingUsed;
+		if (!IsActive
+			|| uwsettings.instance.vr_mirror
+			|| !uimanager.InGame
+			|| useItem == null
+			|| playerdat.ObjectInHand != -1)
+		{
+			if (_useOnLaserIcon != null)
+			{
+				_useOnLaserIcon.Visible = false;
+			}
+
+			return;
+		}
+
+		if (_hudPointerHovering || _statusOverlayHovering || GetAimController() == null)
+		{
+			if (_useOnLaserIcon != null)
+			{
+				_useOnLaserIcon.Visible = false;
+			}
+
+			return;
+		}
+
+		EnsureUseOnLaserIcon();
+		if (_useOnLaserIcon == null)
+		{
+			return;
+		}
+
+		if (_useOnLaserIconItemId != useItem.item_id)
+		{
+			ApplyUseOnLaserIconArt(useItem);
+		}
+
+		var rayOrigin = GetAimRayOrigin();
+		var rayDir = GetControllerRayDir();
+		_useOnLaserIcon.Visible = true;
+		_useOnLaserIcon.GlobalPosition = rayOrigin + rayDir * UseOnLaserIconDistance;
+		if (_xrCamera != null)
+		{
+			// Same facing as UpdateHeldObjectVisual (Get).
+			_useOnLaserIcon.LookAt(_xrCamera.GlobalPosition, Vector3.Up);
+			_useOnLaserIcon.RotateObjectLocal(Vector3.Up, Mathf.Pi);
+		}
+	}
+
+	static void ApplyUseOnLaserIconArt(uwObject useItem)
+	{
+		var gr = ObjectCreator.grObjects ?? uimanager.grObjects;
+		if (gr == null || _useOnLaserIcon?.Mesh is not QuadMesh quad)
+		{
+			return;
+		}
+
+		_useOnLaserIconItemId = useItem.item_id;
+		var img = gr.LoadImageAt(useItem.item_id);
+		if (img == null)
+		{
+			return;
+		}
+
+		// Same material path as ObjectCreator.CreateSprite / Get-held world sprites.
+		var mat = gr.GetMaterial(useItem.item_id);
+		mat.SetShaderParameter("objectindex_lowerbytes", useItem.index & 0xFF);
+		mat.SetShaderParameter("objectindex_upperbytes", (useItem.index >> 8) & 0xFF);
+		quad.Size = new Vector2(
+			ArtLoader.SpriteScale * img.GetWidth(),
+			ArtLoader.SpriteScale * img.GetHeight());
+		_useOnLaserIcon.Mesh.SurfaceSetMaterial(0, mat);
+		_useOnLaserIcon.MaterialOverride = null;
+	}
+
+	static void EnsureUseOnLaserIcon()
+	{
+		if (_useOnLaserIcon != null && GodotObject.IsInstanceValid(_useOnLaserIcon))
+		{
+			return;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld == null)
+		{
+			return;
+		}
+
+		// Drop leftover Sprite3D from the UI-cursor experiment.
+		underworld.GetNodeOrNull<Node>("VrUseOnLaserIcon")?.QueueFree();
+
+		_useOnLaserIcon = new MeshInstance3D
+		{
+			Name = "VrUseOnLaserIcon",
+			Mesh = new QuadMesh(),
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			Layers = main.LayerGeo | main.LayerXFER,
+			Visible = false,
+		};
+		underworld.AddChild(_useOnLaserIcon);
+		_useOnLaserIconItemId = -1;
 	}
 
 	static float GetCanReachWorldRadius(uimanager.InteractionModes mode)
@@ -4005,9 +4151,14 @@ public static partial class VrController
 			: playerdat.UseDistance;
 		if (threshold <= 0)
 		{
-			// Telekinesis / unlimited — match flat raycast length (world metres, not × tile width).
-			var rayDist = uimanager.RayDistance;
-			return rayDist > 0f ? rayDist : 3f;
+			// Telekinesis / unlimited — match flat raycast lengths for this verb.
+			if (mode == uimanager.InteractionModes.ModePickup
+				|| mode == uimanager.InteractionModes.ModeUse)
+			{
+				return playerdat.TelekenesisEnchantment ? 10f : 3f;
+			}
+
+			return 3f;
 		}
 
 		// CanReach compares x²+y² to threshold in UW sub-tile units (8 per tile).
@@ -4016,14 +4167,39 @@ public static partial class VrController
 
 	static float GetInteractRayDistance(uimanager.InteractionModes mode)
 	{
+		// Do not read uimanager.RayDistance here — that property uses the sticky HUD
+		// InteractionMode, not the verb VR is currently firing (Talk was capped at Use/Get range).
+		// Flat RayDistance values are authored for WorldScaleFactor=1; multiply by scale in VR.
+		var worldScale = Mathf.Max(1f, tileMapRender.WorldScaleFactor);
 		switch (mode)
 		{
 			case uimanager.InteractionModes.ModeLook:
 				return GetLookVisionWorldDistance();
 			case uimanager.InteractionModes.ModeTalk:
-				return uimanager.RayDistance > 0f ? uimanager.RayDistance : 8f;
+				// Flat uses 8m at scale 1 (~6.7 tiles). Allow a bit more in VR so hand-aimed
+				// Talk matches Hank's camera-centred feel; still scaled with the world.
+				return 12f * worldScale;
 			case uimanager.InteractionModes.ModeAttack:
-				return uimanager.RayDistance > 0f ? uimanager.RayDistance : 1f;
+				return 1f * worldScale;
+			case uimanager.InteractionModes.ModePickup:
+				if (playerdat.TelekenesisEnchantment)
+				{
+					return 10f * worldScale;
+				}
+
+				return GetCanReachWorldRadius(mode);
+			case uimanager.InteractionModes.ModeUse:
+				if (playerdat.usingpole)
+				{
+					return 6f * worldScale;
+				}
+
+				if (playerdat.TelekenesisEnchantment)
+				{
+					return 10f * worldScale;
+				}
+
+				return GetCanReachWorldRadius(mode);
 			default:
 				return GetCanReachWorldRadius(mode);
 		}
@@ -4041,7 +4217,8 @@ public static partial class VrController
 		var simFeet = uwObject.XYZToVector3(px, py, pz);
 		var eye = uwObject.XYZToVector3(px, py, pz + 0xA4);
 		var bodyHeight = Mathf.Max(0.2f, eye.Y - simFeet.Y);
-		return displayFloor + Vector3.Up * (bodyHeight * 0.5f);
+		// Match play-space swim dunk so the marker (and reach sphere) sit lower in water.
+		return displayFloor + Vector3.Up * (bodyHeight * 0.5f + GetVrSwimOriginYOffset());
 	}
 
 	/// <summary>How far the controller laser may extend along a ray before exceeding pick reach from the avatar.</summary>
@@ -4154,7 +4331,11 @@ public static partial class VrController
 
 		var rayOrigin = GetOffHandRayOrigin();
 		var rayDir = GetOffHandRayDir();
-		var laserT = GetMaxReachAlongRay(rayOrigin, rayDir, GetInteractRayDistance(uimanager.InteractionModes.ModeLook));
+		var offHandReach = Mathf.Max(
+			GetInteractRayDistance(uimanager.InteractionModes.ModeLook),
+			GetInteractRayDistance(uimanager.InteractionModes.ModeTalk));
+		// Match Talk/Look pick length (no body-sphere clamp) so the visible beam reaches NPCs.
+		var laserT = offHandReach;
 		UpdateOffHandPointerLaser(rayOrigin, rayOrigin + rayDir * laserT, visible: true);
 	}
 
@@ -4207,7 +4388,12 @@ public static partial class VrController
 		}
 
 		rayDir = rayDir.Normalized();
-		var maxDist = GetMaxReachAlongRay(rayOrigin, rayDir, GetInteractRayDistance(verb));
+		var interactReach = GetInteractRayDistance(verb);
+		// Talk/Look match flat camera rays: fixed length from the aim origin. Body-sphere
+		// clamping shortens hand-aimed Talk when the controller sits away from the torso.
+		var maxDist = verb is uimanager.InteractionModes.ModeTalk or uimanager.InteractionModes.ModeLook
+			? interactReach
+			: GetMaxReachAlongRay(rayOrigin, rayDir, interactReach);
 		var bestT = maxDist;
 		var bestObjectIndex = 0;
 		var bestTileFace = 0;
@@ -4414,7 +4600,9 @@ public static partial class VrController
 		}
 
 		var closest = rayOrigin + rayDir * along;
-		return closest.DistanceSquaredTo(objPos) <= 2.5f;
+		// Squared pick radius scales with world size so VR sprites remain easy to hit.
+		var pickRadius = 1.6f * Mathf.Max(1f, tileMapRender.WorldScaleFactor);
+		return closest.DistanceSquaredTo(objPos) <= pickRadius * pickRadius;
 	}
 
 	static bool TryPickObjectMeshes(Node3D node, Vector3 rayOrigin, Vector3 rayDir, out float bestT)

@@ -62,7 +62,7 @@ Look mode with hit beyond vision → `IsWithinLookRange` → "you see nothing".
 |------|----------------|-------|
 | Look | `1.2 * (DistanceToWallOrDarkness + 1)` tiles | Refresh vision before pick |
 | Pickup | 3 tiles (10 with telekinesis) | |
-| Talk | 8 tiles | |
+| Talk | 8 tiles (verb distance; do not use sticky HUD `RayDistance`) | |
 | Attack | Controller aim; skip head-alignment gate | |
 
 ## Common bugs
