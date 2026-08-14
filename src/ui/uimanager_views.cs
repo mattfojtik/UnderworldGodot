@@ -342,7 +342,11 @@ namespace Underworld
                 {
                     if (InteractionMode == InteractionModes.ModeLook)
                     {
-                        LookAtTile(pixel.R8, tileX, tileY);
+                        LookAtTile(pixel.R8, tileX, tileY);//there needs to be a distance check to see if the player sees something or nothing. I think it should be based on the shading.
+                    }
+                    else if (InteractionMode == InteractionModes.ModeUse)
+                    {
+                        uimanager.AddToMessageScroll(GameStrings.GetString(1, GameStrings.str_you_cannot_use_that_));
                     }
                 }
             }

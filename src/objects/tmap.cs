@@ -18,6 +18,9 @@ namespace Underworld
                     {
                         return 0.1f;
                     }
+
+                    if (IsDiagonalTile(tile.tileType))
+                        return 0.03f;
                 }
 
                 switch (uwobject.heading)
@@ -40,6 +43,32 @@ namespace Underworld
         static float PanelHalfWidth => tileMapRender.HalfTileWidth;
         static float PanelHeight => tileMapRender.TileWidth;
 
+        static bool IsDiagonalTile(short tileType) =>
+            tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_SW
+                or UWTileMap.TILE_DIAG_NE or UWTileMap.TILE_DIAG_NW;
+
+        /// <summary>Hank's diagonal placement, using world-scale tile sizes for VR.</summary>
+        static void PlaceOnDiagonalWall(Node3D parent, uwObject obj, float extrude, short tileType)
+        {
+            parent.Position = obj.GetCoordinate();
+            const float s = 0.707106781f;
+            var inward = new Vector3(
+                tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_NE ? -s : s,
+                0f,
+                tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_SW ? -s : s).Normalized();
+            var half = PanelHalfWidth;
+            var full = PanelHeight;
+            var tileCenter = new Vector3(-(obj.tileX * full + half), parent.Position.Y, obj.tileY * full + half);
+            float minDepth = float.MaxValue;
+            foreach (var local in new Vector3[]
+            {
+                new(-half, 0f, extrude), new(half, 0f, extrude),
+                new(half, full, extrude), new(-half, full, extrude),
+            })
+                minDepth = Mathf.Min(minDepth, (parent.GlobalTransform * local - tileCenter).Dot(inward));
+            parent.Position += inward * Mathf.Clamp(0.025f - minDepth, -0.12f, 0.12f);
+        }
+
         public tmap(uwObject _uwobject)
         {
             uwobject = _uwobject;
@@ -50,12 +79,21 @@ namespace Underworld
             var t = new tmap(obj);
             t.tmapnode = t.Generate3DModel(parent, name);
             SetModelRotation(parent, t);
-            // AlignToWall multiplies nudge by WorldScaleFactor; counteract so wall offset stays ~0.1m.
-            var nudge = 0.1f / Mathf.Max(1f, tileMapRender.WorldScaleFactor);
-            model3D.AlignToWall(parent, obj, nudgeFactor: nudge);
-            if (uwsettings.instance.vr_debug)
+            var tileType = UWTileMap.ValidTile(obj.tileX, obj.tileY)
+                ? a_tilemap.Tiles[obj.tileX, obj.tileY].tileType : (short)-1;
+            if (IsDiagonalTile(tileType))
             {
-                t.AttachDebugOverlay(parent, nudge);
+                PlaceOnDiagonalWall(parent, obj, t.ExtrudeForMesh(), tileType);
+            }
+            else
+            {
+                // AlignToWall multiplies nudge by WorldScaleFactor; counteract so wall offset stays ~0.1m.
+                var nudge = 0.1f / Mathf.Max(1f, tileMapRender.WorldScaleFactor);
+                model3D.AlignToWall(parent, obj, nudgeFactor: nudge);
+                if (uwsettings.instance.vr_debug)
+                {
+                    t.AttachDebugOverlay(parent, nudge);
+                }
             }
             return t;
         }
