@@ -1,0 +1,30 @@
+---
+description: When something fails or misbehaves, add extensive VrDiagLog diagnostics and read the log files yourself
+alwaysApply: true
+---
+
+# Extensive diagnostics when fixing bugs
+
+When a fix does not work on the first try (or behavior is wrong/unclear), **add detailed logging immediately** and **read the log files yourself** — do not ask the user to copy/paste.
+
+## Do
+
+1. Log through `VrDiagLog.Print` / `Warn` (console + `logs/vr_diag.log` + `user://vr_diag.log`).
+2. Log concrete state: sizes, positions, flags, IDs, null checks, branch taken, before/after values.
+3. Use a stable grep prefix (`[VR cinema]`, `[TMAP]`, `[VR audio]`, etc.).
+4. After the user retests, **grep the logs** and adjust from evidence.
+
+## Do not
+
+- Ask the user to paste logs when `logs/vr_diag.log` or the AppData `vr_diag.log` is available.
+- Rely on console-only `GD.Print` / `Debug.Print` for VR diagnostics.
+- Leave a failing path with no new diagnostics after an unsuccessful attempt.
+
+## Log locations
+
+| Path | Notes |
+|------|--------|
+| `logs/vr_diag.log` | Workspace (agent-readable) |
+| `%APPDATA%/Godot/app_userdata/Underworld/vr_diag.log` | Godot `user://` |
+
+See also `.cursor/rules/vr-debug-logging.mdc`.

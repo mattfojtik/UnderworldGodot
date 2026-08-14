@@ -177,24 +177,38 @@ namespace Underworld
         /// <returns></returns>
         private static IEnumerator DisplayCutsImageWithWait(CutsLoader cuts, int imageNo, TextureRect targetControl, bool DisableCamera = true)
         {
-            targetControl.Texture = cuts.LoadImageAt(imageNo);
-            targetControl.Material = cuts.GetMaterial(imageNo);
-            EnableDisable(targetControl, true);
+            var vrCinema = VrController.ShouldEnterCinemaForCutsStill()
+                && VrController.EnterVrCinemaScreen();
+            var displayTarget = vrCinema
+                ? (VrController.GetVrCinemaCutsTarget() ?? CutsFullscreen)
+                : targetControl;
+
+            displayTarget.Texture = cuts.LoadImageAt(imageNo);
+            displayTarget.Material = cuts.GetMaterial(imageNo);
+            EnableDisable(displayTarget, true);
+            if (vrCinema)
+            {
+                VrController.RefreshVrCinemaCutsLayer();
+            }
             if (DisableCamera)
             {
                 instance.uwsubviewport_sprites.Disable3D = true;
                 instance.uwsubviewport_world.Disable3D = true;
-                //instance.uwsubviewport.Disable3D = true;
             }
             MessageDisplay.WaitingForMore = true;
             while (MessageDisplay.WaitingForMore)
-            {//wait until key input before clearing the image
+            {
                 yield return new WaitOneFrame();
             }
-            EnableDisable(targetControl, false);
-            //instance.uwsubviewport.Disable3D = false;
+            EnableDisable(displayTarget, false);
+            displayTarget.Texture = null;
+            displayTarget.Material = null;
             instance.uwsubviewport_sprites.Disable3D = false;
             instance.uwsubviewport_world.Disable3D = false;
+            if (vrCinema)
+            {
+                VrController.ExitVrCinemaScreen(returnToHandHud: true);
+            }
             yield return 0;
         }
 
@@ -231,6 +245,11 @@ namespace Underworld
                     targetControl.Material = cuts.GetMaterial(imageNo);
                 }
 
+            }
+
+            if (VrController.IsVrCinemaActive)
+            {
+                VrController.RefreshVrCinemaCutsLayer();
             }
         }
 

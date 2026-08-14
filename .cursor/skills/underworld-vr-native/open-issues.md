@@ -9,10 +9,6 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 - Controller laser only — no head aim.
 - Ideas: floor-sprite AABB/quad pick; physics fallback; vision refresh before pick.
 
-### Live status-panel offset debug mode
-- In-headset X/Y/Z nudge for every head-locked widget; write through to settings without restart.
-- Widgets: health/mana/compass/inventory/runes/stats/shelf/spells/chain/conversation/weapon/gem/eyes + global Y.
-
 ## Medium priority
 
 ### Automap keyboard occlusion
@@ -21,17 +17,26 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 ### Automap pointing: quill tip vs cursor
 - Research DOS + Hank flat first; then align VR.
 
-### Death / sapling screens
-- Show death animation only (no full menu/status clutter).
+### Death / sapling / abyss windows
+- VR cinema: black TV + cuts only (no HUD/status). Death/sapling cutscenes + look-stills (`cs400`).
 - Color/palette bug — compare Hank flat before VR-only fix.
 
 ### Inventory / conversation hit targets
 - Invalid inventory release keeps object in hand — keep or expand place hitboxes.
 - Conversation lines hard to hit — widen strips / targeting assist.
 
+### Telekinesis / poles
+- VR reach + feedback for telekinesis and fishing/pole (`CanReach`, beam length, laser vs DOS range).
+
+### Test lefty mode
+- Full lefty / dominant-hand regression (lasers, HUD hand, combat/ranged, panels, menus, aim).
+
 ### Playtests
 - Sleep / dreaming.
 - Level 1 playthrough.
+
+### Investigate all sound modes
+- Audit every `synth` / music+SFX backend (OPL, soundfont, digital VOC, UW1 vs UW2) so cast/hit/UI sounds stay correct; no wrong VOC fallbacks; VR avatar-positioned playback for each mode.
 
 ### Load hang (lost repro)
 - One save hung on load; file lost. Watch for recurrence; capture save + logs if it returns.
@@ -51,11 +56,9 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 
 ## Suggested additions
 
-- Telekinesis / pole reach feedback.
 - Options/pause head-locked UX.
 - Save/load from VR after hang awareness.
 - Cutscene lighting/palette beyond death.
-- Lefty/dominant regression after offset debug.
 - Periodic Hank upstream merge + parity re-test.
 
 ## Recently landed (regression watch)
@@ -66,6 +69,7 @@ Last updated Aug 2026. Canonical user-facing copy: `docs/vr-open-issues.md` — 
 - Active spells + chain status widgets; mage cheat
 - Chain crop tuned vs flasks
 - **Aimed spells + ranged (complete):** laser absolute aim; cursor at 2 m; spawn 1 m along laser; cast SFX; ranged = stab-plane charge/release
+- **Status-panel offset tuner** on `vr-status-panel-offset-tuner` (dialed offsets in settings; don’t merge tuner)
 
 ## Confirmed working
 

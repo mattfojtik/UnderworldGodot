@@ -41,6 +41,8 @@ if (uimanager.InGame && !uimanager.blockinput)
 
 Always use `VrDiagLog.Print` / `Warn` / `Debug` for VR diagnostics (never bare `GD.Print` / `Debug.Print`). Native VR mirrors to console **and** `logs/vr_diag.log` + `user://vr_diag.log`. See `.cursor/rules/vr-debug-logging.mdc`.
 
+When a fix fails or behavior is wrong, add **extensive** `VrDiagLog` lines and **grep the log files yourself** — do not ask the user to paste logs. See `.cursor/rules/extensive-diagnostics.mdc`.
+
 ## XROrigin / Locomotion
 
 - Position: `SyncXrOriginFromGimbal()` follows avatar floor by **delta** each physics frame (preserves B-recenter sticky offset).

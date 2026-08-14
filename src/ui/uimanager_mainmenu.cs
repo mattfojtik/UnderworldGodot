@@ -562,9 +562,13 @@ namespace Underworld
 			EnableDisable(instance.PanelMainMenu, true);
 			instance.ToggleMainMenuButtons(true);
 			instance.ToggleSaves(false); 
-			EnableDisable(instance.DragonPanel,false);           
+			EnableDisable(instance.DragonPanel,false);
+			if (uwsettings.instance.vr && !uwsettings.instance.vr_mirror)
+			{
+				VrController.OnReturnedToMainMenuFromGameplay();
+			}
 			//InGame = false;
-			Node3D the_tiles = main.instance.GetNode<Node3D>("/root/Underworld/tilemap");
+			Node3D the_tiles = main.instance.GetNodeOrNull<Node3D>("/root/Underworld/tilemap");
 			if (the_tiles != null)
 			{
 				UWTileMap.DestroyTileMapAndContents(the_tiles);

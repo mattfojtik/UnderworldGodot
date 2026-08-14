@@ -418,6 +418,7 @@ public static partial class VrController
 	{
 		return IsActive
 			&& _headOverlaysVisible
+			&& !_vrCinemaFromGameplay
 			&& uwsettings.instance.vr_status_panels
 			&& !uwsettings.instance.vr_mirror
 			&& (uimanager.InGame || uimanager.InConversation)
@@ -1638,10 +1639,34 @@ public static partial class VrController
 			&& (cutsceneNo == 0x102 || cutsceneNo == 0x103);
 	}
 
-	/// <summary>Show the full HUD viewport on the large head-locked screen (death cutscenes).</summary>
+	/// <summary>Still images on CutsSmall during gameplay (abyss windows, graves) → cinema TV.</summary>
+	public static bool ShouldEnterCinemaForCutsStill()
+	{
+		return IsActive
+			&& !uwsettings.instance.vr_mirror
+			&& uimanager.InGame
+			&& !_vrCinemaFromGameplay;
+	}
+
+	/// <summary>
+	/// Head-locked menu TV with black backdrop + cuts only (no game HUD / status widgets).
+	/// Used for death, silver sapling, and look-at stills like abyss windows.
+	/// </summary>
 	public static bool EnterVrCinemaScreen()
 	{
-		if (!IsActive || uwsettings.instance.vr_mirror || _vrUiOnMenuTv || _xrCamera == null)
+		if (!IsActive || uwsettings.instance.vr_mirror || _xrCamera == null)
+		{
+			return false;
+		}
+
+		// Already presenting cinema from gameplay — keep isolation, refresh panel.
+		if (_vrCinemaFromGameplay && _vrUiOnMenuTv)
+		{
+			BeginVrCinemaUiIsolation();
+			return true;
+		}
+
+		if (_vrUiOnMenuTv)
 		{
 			return false;
 		}
@@ -1704,7 +1729,8 @@ public static partial class VrController
 		UpdateXrViewportHdrForUiMode();
 		_hudViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
 		RefreshVrUiQuadMaterial();
-		VrDiagLog.Print("[VR] Cinema screen enabled for death cutscene.");
+		BeginVrCinemaUiIsolation();
+		VrDiagLog.Print("[VR] Cinema screen enabled (black TV + cuts only).");
 		return true;
 	}
 
@@ -1715,7 +1741,27 @@ public static partial class VrController
 			return;
 		}
 
+		EndVrCinemaUiIsolation();
 		_vrCinemaFromGameplay = false;
+
+		if (_cinemaCutsRect != null && GodotObject.IsInstanceValid(_cinemaCutsRect))
+		{
+			_cinemaCutsRect.Texture = null;
+			_cinemaCutsRect.Material = null;
+			_cinemaCutsRect.Visible = false;
+		}
+
+		var cuts = uimanager.CutsFullscreen;
+		if (cuts != null && GodotObject.IsInstanceValid(cuts))
+		{
+			cuts.Texture = null;
+			cuts.Material = null;
+			if (!returnToHandHud)
+			{
+				uimanager.EnableDisable(cuts, false);
+			}
+		}
+
 		if (returnToHandHud && uwsettings.instance.vr_hud_panel)
 		{
 			TransitionMenuTvToHandHud();
@@ -1724,6 +1770,507 @@ public static partial class VrController
 
 		_vrUiOnMenuTv = true;
 		UpdateXrViewportHdrForUiMode();
+		RefreshVrUiQuadMaterial();
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld != null)
+		{
+			TryEnsureMenuTvScreen();
+		}
+
+		VrDiagLog.Print("[VR] Cinema exited to menu TV (awaiting main menu).");
+	}
+
+	/// <summary>Dedicated full-bleed TextureRect for VR cinema (not nested under Common).</summary>
+	public static TextureRect GetVrCinemaCutsTarget()
+	{
+		if (!_vrCinemaFromGameplay)
+		{
+			return null;
+		}
+
+		EnsureCinemaCutsSurface();
+		return _cinemaCutsRect;
+	}
+
+	public static bool IsVrCinemaActive => _vrCinemaFromGameplay;
+
+	/// <summary>Hide game chrome so alpha cuts don't reveal the HUD; black fills the TV.</summary>
+	static void BeginVrCinemaUiIsolation()
+	{
+		if (_vrCinemaUiIsolated)
+		{
+			ForceHideStatusWidgetsForCinema();
+			SetVrCinemaWorldVisible(false);
+			EnsureCinemaCutsSurface();
+			return;
+		}
+
+		_vrCinemaUiIsolated = true;
+		var um = uimanager.instance;
+		if (um?.uw1UI != null)
+		{
+			_cinemaSavedUw1Visible = um.uw1UI.Visible;
+			um.uw1UI.Visible = false;
+		}
+
+		if (um?.uw2UI != null)
+		{
+			_cinemaSavedUw2Visible = um.uw2UI.Visible;
+			um.uw2UI.Visible = false;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		var uiRoot = GetVrUiCanvasLayer(underworld);
+		var threeD = uiRoot?.GetNodeOrNull<CanvasLayer>("3DWin");
+		if (threeD != null)
+		{
+			_cinemaSaved3DWinVisible = threeD.Visible;
+			threeD.Visible = false;
+		}
+
+		HideCommonChromeForCinema(uiRoot);
+		EnsureCinemaBlackout();
+		EnsureCinemaCutsSurface();
+		ForceHideStatusWidgetsForCinema();
+		SetVrCinemaWorldVisible(false);
+		if (_messageScrollPanel != null && GodotObject.IsInstanceValid(_messageScrollPanel))
+		{
+			_messageScrollPanel.Visible = false;
+		}
+
+		// Stock CutsFullscreen stays hidden — cinema uses VrCinemaCuts full-bleed surface.
+		uimanager.EnableDisable(uimanager.CutsFullscreen, false);
+
+		_cinemaDiagFrame = 0;
+		LogCinemaCutsDiagnostics("enter");
+		LogAndEnsureCinemaAudio("cinema-enter");
+		RefreshVrUiQuadMaterial();
+		VrDiagLog.Print("[VR] Cinema UI isolation: HUD chrome hidden, world hidden, black TV backdrop.");
+	}
+
+	static void EndVrCinemaUiIsolation()
+	{
+		if (!_vrCinemaUiIsolated)
+		{
+			return;
+		}
+
+		_vrCinemaUiIsolated = false;
+		SetVrCinemaWorldVisible(true);
+		var um = uimanager.instance;
+		if (um?.uw1UI != null)
+		{
+			um.uw1UI.Visible = _cinemaSavedUw1Visible;
+		}
+
+		if (um?.uw2UI != null)
+		{
+			um.uw2UI.Visible = _cinemaSavedUw2Visible;
+		}
+
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		var uiRoot = GetVrUiCanvasLayer(underworld);
+		var threeD = uiRoot?.GetNodeOrNull<CanvasLayer>("3DWin");
+		if (threeD != null)
+		{
+			threeD.Visible = _cinemaSaved3DWinVisible;
+		}
+
+		foreach (var (node, wasVisible) in _cinemaHiddenCommonItems)
+		{
+			if (GodotObject.IsInstanceValid(node))
+			{
+				node.Visible = wasVisible;
+			}
+		}
+
+		_cinemaHiddenCommonItems.Clear();
+		if (_cinemaBlackout != null && GodotObject.IsInstanceValid(_cinemaBlackout))
+		{
+			_cinemaBlackout.Visible = false;
+		}
+
+		if (_cinemaCutsRect != null && GodotObject.IsInstanceValid(_cinemaCutsRect))
+		{
+			_cinemaCutsRect.Visible = false;
+		}
+
+		LogAndEnsureCinemaAudio("cinema-end-isolation");
+		VrDiagLog.Print("[VR] Cinema UI isolation ended; world restored.");
+	}
+
+	static void LogAndEnsureCinemaAudio(string tag)
+	{
+		var dig = main.instance?.DigitalAudioPlayer;
+		var masterIdx = AudioServer.GetBusIndex("Master");
+		var masterDb = masterIdx >= 0 ? AudioServer.GetBusVolumeDb(masterIdx) : float.NaN;
+		var masterMute = masterIdx >= 0 && AudioServer.IsBusMute(masterIdx);
+		if (dig != null)
+		{
+			// Keep cutscene VOC mixable even while UI lives under the HUD SubViewport.
+			dig.ProcessMode = Node.ProcessModeEnum.Always;
+			if (string.IsNullOrEmpty(dig.Bus))
+			{
+				dig.Bus = "Master";
+			}
+		}
+
+		VrDiagLog.Print(
+			$"[VR audio] {tag} masterDb={masterDb:F1} masterMute={masterMute} "
+			+ $"dig={(dig != null)} digPlaying={dig?.Playing} digVol={dig?.VolumeDb} "
+			+ $"digBus={dig?.Bus} digProc={dig?.ProcessMode} "
+			+ $"digStream={(dig?.Stream != null ? dig.Stream.ResourceName : "null")} "
+			+ $"musicInst={(MusicStreamPlayer.Instance != null)}");
+	}
+
+	/// <summary>
+	/// Native VR draws the dungeon in the XR camera — Disable3D on flat SubViewports does nothing.
+	/// Hide tilemap + world objects (missiles, sprites) for a true black surround.
+	/// </summary>
+	static void SetVrCinemaWorldVisible(bool visible)
+	{
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		var tilemap = GetTilemapNode(_gameRoot)
+			?? underworld?.GetNodeOrNull<Node3D>("tilemap");
+		var worldObjs = ObjectCreator.worldobjects
+			?? underworld?.GetNodeOrNull<Node3D>("worldobjects");
+
+		if (!visible)
+		{
+			if (tilemap != null)
+			{
+				_cinemaSavedTilemapVisible = tilemap.Visible;
+				tilemap.Visible = false;
+			}
+
+			if (worldObjs != null)
+			{
+				_cinemaSavedWorldObjectsVisible = worldObjs.Visible;
+				worldObjs.Visible = false;
+			}
+
+			if (_bodyMarker != null && GodotObject.IsInstanceValid(_bodyMarker))
+			{
+				_bodyMarker.Visible = false;
+			}
+
+			return;
+		}
+
+		if (tilemap != null)
+		{
+			tilemap.Visible = _cinemaSavedTilemapVisible;
+		}
+
+		if (worldObjs != null)
+		{
+			worldObjs.Visible = _cinemaSavedWorldObjectsVisible;
+		}
+	}
+
+	/// <summary>
+	/// Full-bleed cuts surface as a direct child of the HUD SubViewport (1280×800).
+	/// Bakes palette materials to RGB so TextureRect Scale stretch fills the TV
+	/// (ShaderMaterial left native 320×200 frames stuck in a corner).
+	/// </summary>
+	static void EnsureCinemaCutsSurface()
+	{
+		if (_hudViewport == null || !GodotObject.IsInstanceValid(_hudViewport))
+		{
+			VrDiagLog.Warn("[VR cinema] EnsureCinemaCutsSurface: _hudViewport missing.");
+			return;
+		}
+
+		EnsureCinemaBlackout();
+
+		if (_cinemaCutsRect == null || !GodotObject.IsInstanceValid(_cinemaCutsRect))
+		{
+			_cinemaCutsRect = new TextureRect
+			{
+				Name = "VrCinemaCuts",
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+				ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+				StretchMode = TextureRect.StretchModeEnum.Scale,
+				ZIndex = 100,
+			};
+			_hudViewport.AddChild(_cinemaCutsRect);
+			VrDiagLog.Print("[VR cinema] Created VrCinemaCuts under HudViewport.");
+		}
+		else if (_cinemaCutsRect.GetParent() != _hudViewport)
+		{
+			_cinemaCutsRect.GetParent()?.RemoveChild(_cinemaCutsRect);
+			_hudViewport.AddChild(_cinemaCutsRect);
+			VrDiagLog.Print("[VR cinema] Reparented VrCinemaCuts → HudViewport.");
+		}
+
+		ApplyCinemaFullBleedLayout(_cinemaCutsRect);
+		_cinemaCutsRect.Visible = true;
+		_cinemaCutsRect.Modulate = Colors.White;
+		_cinemaCutsRect.MoveToFront();
+
+		var subtitle = uimanager.instance?.CutsSubtitle;
+		if (subtitle != null && GodotObject.IsInstanceValid(subtitle))
+		{
+			subtitle.Visible = true;
+			subtitle.ZIndex = 101;
+			subtitle.MoveToFront();
+		}
+	}
+
+	static void ApplyCinemaFullBleedLayout(Control control)
+	{
+		if (control == null)
+		{
+			return;
+		}
+
+		control.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+		control.GrowHorizontal = Control.GrowDirection.Begin;
+		control.GrowVertical = Control.GrowDirection.Begin;
+		control.AnchorLeft = 0f;
+		control.AnchorTop = 0f;
+		control.AnchorRight = 0f;
+		control.AnchorBottom = 0f;
+		control.OffsetLeft = 0f;
+		control.OffsetTop = 0f;
+		control.OffsetRight = HudPanelWidthPx;
+		control.OffsetBottom = HudPanelHeightPx;
+		control.Position = Vector2.Zero;
+		control.Size = new Vector2(HudPanelWidthPx, HudPanelHeightPx);
+		control.CustomMinimumSize = new Vector2(HudPanelWidthPx, HudPanelHeightPx);
+	}
+
+	static void BakeCinemaCutsToRgbIfNeeded()
+	{
+		if (_cinemaCutsRect == null || !GodotObject.IsInstanceValid(_cinemaCutsRect))
+		{
+			return;
+		}
+
+		if (_cinemaCutsRect.Texture == null)
+		{
+			return;
+		}
+
+		// Already a full-bleed presented frame — skip.
+		if (_cinemaCutsRect.Material == null
+			&& _cinemaCutsRect.Texture.GetWidth() == HudPanelWidthPx
+			&& _cinemaCutsRect.Texture.GetHeight() == HudPanelHeightPx)
+		{
+			return;
+		}
+
+		var srcImg = _cinemaCutsRect.Texture.GetImage();
+		if (srcImg == null)
+		{
+			VrDiagLog.Warn("[VR cinema] Present failed: GetImage null.");
+			return;
+		}
+
+		var needsPaletteBake = _cinemaCutsRect.Material != null;
+		var w = srcImg.GetWidth();
+		var h = srcImg.GetHeight();
+		Image rgba = srcImg;
+		if (needsPaletteBake)
+		{
+			rgba = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
+			var palIndex = Palette.CurrentPalette;
+			var pal = PaletteLoader.Palettes != null && palIndex >= 0 && palIndex < PaletteLoader.Palettes.Length
+				? PaletteLoader.Palettes[palIndex]
+				: null;
+			pal ??= PaletteLoader.Palettes is { Length: > 0 } ? PaletteLoader.Palettes[0] : null;
+			if (pal == null)
+			{
+				VrDiagLog.Warn("[VR cinema] Present failed: no palette.");
+				return;
+			}
+
+			for (var y = 0; y < h; y++)
+			{
+				for (var x = 0; x < w; x++)
+				{
+					var px = srcImg.GetPixel(x, y);
+					var index = (byte)Mathf.Clamp(Mathf.RoundToInt(px.R * 255f), 0, 255);
+					rgba.SetPixel(x, y, pal.ColorAtIndex(index, useAlphaChannel: true, useSingleRedChannel: false));
+				}
+			}
+		}
+		else if (rgba.GetFormat() != Image.Format.Rgba8)
+		{
+			rgba = (Image)srcImg.Duplicate();
+			rgba.Convert(Image.Format.Rgba8);
+		}
+
+		// Death/sapling art is authored for CutsSmall's shifted rect: the visible 3D-window
+		// crop sits in the lower-right of the full 320×200. Crop that region and upscale
+		// so the TV shows the same framing as the original HUD 3D window, full-bleed.
+		var crop = GetCinemaSourcePixelRect(rgba.GetWidth(), rgba.GetHeight());
+		var cropped = rgba.GetRegion(crop);
+		cropped.Resize(HudPanelWidthPx, HudPanelHeightPx, Image.Interpolation.Nearest);
+
+		_cinemaCutsRect.Material = null;
+		_cinemaCutsRect.Texture = ImageTexture.CreateFromImage(cropped);
+		if (_cinemaDiagFrame <= 3 || _cinemaDiagFrame % 30 == 0)
+		{
+			VrDiagLog.Print(
+				$"[VR cinema] Present src={w}x{h} paletteBake={needsPaletteBake} "
+				+ $"crop={crop} → {HudPanelWidthPx}x{HudPanelHeightPx}");
+		}
+	}
+
+	/// <summary>
+	/// Pixel region of a CutsSmall-sized frame that maps to the on-screen 3D window
+	/// (see CutsceneSmall / Cuts3DWin offsets in Underworld.tscn).
+	/// </summary>
+	static Rect2I GetCinemaSourcePixelRect(int texW, int texH)
+	{
+		const float smallX = -384f;
+		const float smallY = -268f;
+		const float smallW = 1280f;
+		const float smallH = 800f;
+		float winX;
+		float winY;
+		float winW;
+		float winH;
+		if (UWClass._RES == UWClass.GAME_UW2)
+		{
+			winX = 60f;
+			winY = 60f;
+			winW = 840f;
+			winH = 520f;
+		}
+		else
+		{
+			winX = 204f;
+			winY = 72f;
+			winW = 696f;
+			winH = 460f;
+		}
+
+		var u0 = Mathf.Clamp((winX - smallX) / smallW, 0f, 1f);
+		var v0 = Mathf.Clamp((winY - smallY) / smallH, 0f, 1f);
+		var u1 = Mathf.Clamp((winX + winW - smallX) / smallW, 0f, 1f);
+		var v1 = Mathf.Clamp((winY + winH - smallY) / smallH, 0f, 1f);
+		var x = Mathf.Clamp((int)(u0 * texW), 0, Math.Max(0, texW - 1));
+		var y = Mathf.Clamp((int)(v0 * texH), 0, Math.Max(0, texH - 1));
+		var w = Mathf.Clamp((int)((u1 - u0) * texW), 1, texW - x);
+		var h = Mathf.Clamp((int)((v1 - v0) * texH), 1, texH - y);
+		return new Rect2I(x, y, w, h);
+	}
+
+	static void LogCinemaCutsDiagnostics(string tag)
+	{
+		_cinemaDiagFrame++;
+		if (_cinemaDiagFrame > 8 && _cinemaDiagFrame % 30 != 0 && tag is not ("enter" or "present"))
+		{
+			return;
+		}
+
+		var cuts = _cinemaCutsRect;
+		var tex = cuts?.Texture;
+		var rect = cuts != null && GodotObject.IsInstanceValid(cuts) ? cuts.GetGlobalRect() : new Rect2();
+		VrDiagLog.Print(
+			$"[VR cinema] {tag}#{_cinemaDiagFrame} "
+			+ $"vpSize={(_hudViewport != null ? _hudViewport.Size.ToString() : "null")} "
+			+ $"parent={cuts?.GetParent()?.Name} "
+			+ $"pos={cuts?.Position} size={cuts?.Size} min={cuts?.CustomMinimumSize} "
+			+ $"global={rect} "
+			+ $"anchors=({cuts?.AnchorLeft:F2},{cuts?.AnchorTop:F2},{cuts?.AnchorRight:F2},{cuts?.AnchorBottom:F2}) "
+			+ $"offsets=({cuts?.OffsetLeft:F0},{cuts?.OffsetTop:F0},{cuts?.OffsetRight:F0},{cuts?.OffsetBottom:F0}) "
+			+ $"grow=({cuts?.GrowHorizontal},{cuts?.GrowVertical}) "
+			+ $"stretch={cuts?.StretchMode} expand={cuts?.ExpandMode} "
+			+ $"tex={(tex?.GetWidth() ?? -1)}x{(tex?.GetHeight() ?? -1)} hasMat={cuts?.Material != null} "
+			+ $"vis={cuts?.Visible} blackoutSize={_cinemaBlackout?.Size}");
+	}
+
+	/// <summary>Call after assigning a cuts texture so layout stays full-bleed on the TV.</summary>
+	public static void RefreshVrCinemaCutsLayer()
+	{
+		if (!_vrCinemaFromGameplay)
+		{
+			return;
+		}
+
+		EnsureCinemaCutsSurface();
+		BakeCinemaCutsToRgbIfNeeded();
+		ApplyCinemaFullBleedLayout(_cinemaCutsRect);
+		if (_cinemaCutsRect != null && GodotObject.IsInstanceValid(_cinemaCutsRect))
+		{
+			_cinemaCutsRect.SetDeferred(Control.PropertyName.Size, new Vector2(HudPanelWidthPx, HudPanelHeightPx));
+			_cinemaCutsRect.SetDeferred(Control.PropertyName.Position, Vector2.Zero);
+		}
+
+		LogCinemaCutsDiagnostics("refresh");
+		RefreshVrUiQuadMaterial();
+	}
+
+	static void HideCommonChromeForCinema(CanvasLayer uiRoot)
+	{
+		_cinemaHiddenCommonItems.Clear();
+		var common = uiRoot?.GetNodeOrNull<CanvasLayer>("Common");
+		if (common == null)
+		{
+			return;
+		}
+
+		foreach (var child in common.GetChildren())
+		{
+			if (child is not CanvasItem item)
+			{
+				continue;
+			}
+
+			var name = item.Name.ToString();
+			if (name is "CutsFullscreen" or "CutsSubtitle" or "VrCinemaBlackout")
+			{
+				continue;
+			}
+
+			_cinemaHiddenCommonItems.Add((item, item.Visible));
+			item.Visible = false;
+		}
+	}
+
+	static void EnsureCinemaBlackout(CanvasLayer unusedUiRoot = null)
+	{
+		if (_hudViewport == null || !GodotObject.IsInstanceValid(_hudViewport))
+		{
+			return;
+		}
+
+		if (_cinemaBlackout == null || !GodotObject.IsInstanceValid(_cinemaBlackout))
+		{
+			_cinemaBlackout = new ColorRect
+			{
+				Name = "VrCinemaBlackout",
+				Color = Colors.Black,
+				MouseFilter = Control.MouseFilterEnum.Ignore,
+				ZIndex = 0,
+			};
+			_hudViewport.AddChild(_cinemaBlackout);
+		}
+		else if (_cinemaBlackout.GetParent() != _hudViewport)
+		{
+			_cinemaBlackout.GetParent()?.RemoveChild(_cinemaBlackout);
+			_hudViewport.AddChild(_cinemaBlackout);
+		}
+
+		ApplyCinemaFullBleedLayout(_cinemaBlackout);
+		_cinemaBlackout.Visible = true;
+		_hudViewport.MoveChild(_cinemaBlackout, 0);
+	}
+
+	static void ForceHideStatusWidgetsForCinema()
+	{
+		foreach (var widget in _statusWidgets)
+		{
+			widget.Alpha = 0f;
+			widget.HideAfterTime = -1f;
+			if (widget.Panel != null && GodotObject.IsInstanceValid(widget.Panel))
+			{
+				widget.Panel.Visible = false;
+			}
+		}
 	}
 
 	static VrStatusWidget GetStatusWidget(VrStatusWidgetKind kind)

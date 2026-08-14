@@ -701,8 +701,25 @@ namespace Underworld
                             var sound = vocLoader.Load(vocfile);
                             if (sound != null)
                             {
-                                main.instance.DigitalAudioPlayer.Stream = sound.toWav();
-                                main.instance.DigitalAudioPlayer.Play();
+                                var player = main.instance?.DigitalAudioPlayer;
+                                if (player != null)
+                                {
+                                    player.ProcessMode = Node.ProcessModeEnum.Always;
+                                    player.Stream = sound.toWav();
+                                    player.Play();
+                                    VrDiagLog.Print(
+                                        $"[VR audio] cutscene VOC play file={vocfile} "
+                                        + $"playing={player.Playing} vol={player.VolumeDb} bus={player.Bus} "
+                                        + $"parent={player.GetParent()?.Name}");
+                                }
+                                else
+                                {
+                                    VrDiagLog.Warn($"[VR audio] cutscene VOC skipped (no DigitalAudioPlayer): {vocfile}");
+                                }
+                            }
+                            else
+                            {
+                                VrDiagLog.Warn($"[VR audio] cutscene VOC load failed: {vocfile}");
                             }
                         }
                         break;
@@ -963,11 +980,12 @@ namespace Underworld
             MessageDisplay.WaitingForMore = false;
             Debug.Print($"Running cutscene {CutsceneNo}");
             IsPlaying = true;
-            TextureRect cutscontrol;
-            if (FullScreen)
-                cutscontrol = uimanager.CutsFullscreen;
-            else
-                cutscontrol = uimanager.CutsSmall;
+            // Flat: cutscenes >= 256 use CutsSmall (3D-window sized). VR cinema paints the
+            // head-locked TV via CutsFullscreen — otherwise isolation hides UW1/CutsSmall and
+            // the TV keeps a frozen intro frame while death audio still plays.
+            TextureRect cutscontrol = FullScreen
+                ? uimanager.CutsFullscreen
+                : uimanager.CutsSmall;
 
             uimanager.EnableDisable(cutscontrol, true);
             uimanager.EnableDisable(uimanager.instance.CutsSubtitle, true);
@@ -976,6 +994,19 @@ namespace Underworld
             var vrCinemaEntered = VrController.ShouldEnterCinemaForCutscene(CutsceneNo, wasInGame)
                 && VrController.EnterVrCinemaScreen();
             var vrCinemaReturnToHandHud = CutsceneNo == 0x102;
+            if (vrCinemaEntered)
+            {
+                uimanager.EnableDisable(cutscontrol, false);
+                cutscontrol = VrController.GetVrCinemaCutsTarget() ?? uimanager.CutsFullscreen;
+                uimanager.EnableDisable(cutscontrol, true);
+                cutscontrol.Texture = null;
+                cutscontrol.Material = null;
+                cutscontrol.Modulate = Colors.White;
+                VrController.RefreshVrCinemaCutsLayer();
+                VrDiagLog.Print(
+                    $"[VR] Death/sapling cinema target={cutscontrol.Name} "
+                    + $"pos={cutscontrol.Position} size={cutscontrol.Size}");
+            }
 
             FrameNo = 0;
             currentFileExt = 1;
@@ -1570,10 +1601,11 @@ namespace Underworld
 
         cleanup:
             IsPlaying = false;
-            uimanager.CurrentGameMode = OrigGameMode;//restore gamemode before any new cutscenes start.
             uimanager.EnableDisable(cutscontrol, false);
             uimanager.EnableDisable(uimanager.instance.CutsSubtitle, false);
 
+            // Exit cinema while still CUTSCENE so InGame HUD setup cannot steal the TV
+            // before ReturnToMainMenu (death softlock).
             if (vrCinemaEntered)
             {
                 VrController.ExitVrCinemaScreen(vrCinemaReturnToHandHud);
@@ -1591,8 +1623,23 @@ namespace Underworld
             }
             else if (callBackMethod != null)
             {
+                // Death cinema (!returnToHandHud): leave CUTSCENE until callback sets MAIN.
+                // Sapling / other: restore GAME so resurrect & gameplay hooks work.
+                if (!(vrCinemaEntered && !vrCinemaReturnToHandHud))
+                {
+                    uimanager.CurrentGameMode = OrigGameMode;
+                }
+
                 callBackMethod();
                 callBackMethod = null;
+                if (uimanager.CurrentGameMode == uimanager.GameModes.CUTSCENE)
+                {
+                    uimanager.CurrentGameMode = OrigGameMode;
+                }
+            }
+            else
+            {
+                uimanager.CurrentGameMode = OrigGameMode;
             }
 
             yield return new WaitOneFrame();

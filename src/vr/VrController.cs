@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 
 namespace Underworld;
@@ -52,6 +53,16 @@ public static partial class VrController
 	static CanvasLayer _hudMouseLayer;
 	static bool _vrUiOnMenuTv;
 	static bool _vrCinemaFromGameplay;
+	static bool _vrCinemaUiIsolated;
+	static bool _cinemaSavedUw1Visible;
+	static bool _cinemaSavedUw2Visible;
+	static bool _cinemaSaved3DWinVisible;
+	static bool _cinemaSavedTilemapVisible = true;
+	static bool _cinemaSavedWorldObjectsVisible = true;
+	static readonly List<(CanvasItem Node, bool WasVisible)> _cinemaHiddenCommonItems = new();
+	static ColorRect _cinemaBlackout;
+	static TextureRect _cinemaCutsRect;
+	static int _cinemaDiagFrame;
 	static bool _vrGameplayEnterPending;
 	static bool _vrShortcutTriggerWasPressed;
 	static bool _vrEscapeWasPressed;
@@ -1270,6 +1281,24 @@ public static partial class VrController
 		ui.GetParent()?.RemoveChild(ui);
 		_hudViewport.AddChild(ui);
 
+		// DigitalAudioPlayer lives under UI; keep it processing for cutscene VOC while
+		// the UI tree is inside the HUD SubViewport.
+		var dig = main.instance?.DigitalAudioPlayer
+			?? ui.GetNodeOrNull<AudioStreamPlayer>("DigitalAudioPlayer");
+		if (dig != null)
+		{
+			dig.ProcessMode = Node.ProcessModeEnum.Always;
+			if (string.IsNullOrEmpty(dig.Bus))
+			{
+				dig.Bus = "Master";
+			}
+			VrDiagLog.Print($"[VR audio] DigitalAudioPlayer ready bus={dig.Bus} proc={dig.ProcessMode} parent={dig.GetParent()?.Name}");
+		}
+		else
+		{
+			VrDiagLog.Warn("[VR audio] DigitalAudioPlayer not found under UI.");
+		}
+
 		_hudMouseLayer = ui.GetNodeOrNull<CanvasLayer>("mouse");
 		if (_hudMouseLayer != null)
 		{
@@ -1807,6 +1836,12 @@ public static partial class VrController
 
 	static void TransitionMenuTvToHandHud()
 	{
+		// Death / sapling / look-stills own the head-locked TV until ExitVrCinemaScreen.
+		if (_vrCinemaFromGameplay)
+		{
+			return;
+		}
+
 		if (_hudPanel == null)
 		{
 			_vrUiOnMenuTv = false;
@@ -1855,7 +1890,7 @@ public static partial class VrController
 
 	static void EnsureVrGameplayHud()
 	{
-		if (uwsettings.instance.vr_mirror)
+		if (uwsettings.instance.vr_mirror || _vrCinemaFromGameplay)
 		{
 			return;
 		}
@@ -1901,6 +1936,26 @@ public static partial class VrController
 			var showDebug = uwsettings.instance.vr_light_debug;
 			uimanager.EnableDisable(main.instance.lblPositionDebug, showDebug);
 		}
+	}
+
+	/// <summary>Call when returning to the front menu from gameplay (e.g. after death).</summary>
+	public static void OnReturnedToMainMenuFromGameplay()
+	{
+		if (!IsActive || uwsettings.instance.vr_mirror)
+		{
+			return;
+		}
+
+		_vrCinemaFromGameplay = false;
+		_vrUiOnMenuTv = true;
+		var underworld = _gameRoot?.GetParent<Node3D>();
+		if (underworld != null)
+		{
+			TryEnsureMenuTvScreen();
+		}
+
+		RefreshVrUiQuadMaterial();
+		VrDiagLog.Print("[VR] Returned to main menu TV after gameplay.");
 	}
 
 	/// <summary>Call when a full-boot VR session enters gameplay (after JourneyOnwards).</summary>
@@ -2059,6 +2114,11 @@ public static partial class VrController
 			return;
 		}
 
+		if (_vrCinemaFromGameplay)
+		{
+			return;
+		}
+
 		if (_vrUiOnMenuTv)
 		{
 			TransitionMenuTvToHandHud();
@@ -2183,6 +2243,11 @@ public static partial class VrController
 	static void RetryPendingVrHudSetup()
 	{
 		if (!IsActive || uwsettings.instance.vr_mirror || !uwsettings.instance.vr_hud_panel || GetHudHandController() == null)
+		{
+			return;
+		}
+
+		if (_vrCinemaFromGameplay)
 		{
 			return;
 		}
@@ -3628,6 +3693,11 @@ public static partial class VrController
 	static bool ShouldShowBodyMarker()
 	{
 		if (!IsActive || uwsettings.instance.vr_mirror || !uwsettings.instance.vr_show_body)
+		{
+			return false;
+		}
+
+		if (_vrCinemaFromGameplay)
 		{
 			return false;
 		}

@@ -32,8 +32,8 @@ When the map keyboard sits over typed text / notes, you can’t see what you’r
 ### Automap pointing: quill tip vs cursor
 Decide whether map paint/write should use the **quill tip** or the generic pointer. **Check DOS and Hank flat first**, then match VR to the chosen semantic.
 
-### Death / sapling screens
-On death (and sapling), don’t show the full VR menu/status clutter — **death animation only**. Also a **color/palette bug**; verify whether Hank flat has the same issue before fixing VR-only.
+### Death / sapling / abyss windows
+VR cinema TV: black backdrop + cuts only (no HUD/status chrome). Death `0x103`, sapling `0x102`, and look-stills (e.g. `cs400` windows). Palette/color issues still TBD vs Hank flat.
 
 ### Inventory / conversation hit targets
 - **Get + release** over inventory chrome that isn’t a valid slot: object stays in hand (maybe keep; or expand valid place hitboxes).
