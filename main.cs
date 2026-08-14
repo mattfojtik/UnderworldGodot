@@ -930,18 +930,19 @@ public partial class main : Node3D
 						case Key.Quoteleft: // ` key (often documented as "~")
 						case Key.Asciitilde:
 							{
-								//give full mage abilities
+								//give full mage abilities (play_level max is 15 — 16 OOBs LevelUpAt on kill XP)
 								playerdat.max_mana = 60;
 								playerdat.play_mana = 60;
 								playerdat.Casting = 30;
 								playerdat.ManaSkill = 30;
-								playerdat.play_level = 16;
+								playerdat.play_level = 15;
 								for (int r = 0; r < 24; r++)
 								{
 									playerdat.SetRune(r, true);
 								}
 								playerdat.PlayerStatusUpdate();
-								uimanager.AddToMessageScroll("Cheat: all runes, mana 60, casting 30.");
+								uimanager.AddToMessageScroll("Cheat: all runes, mana 60, casting 30, level 15.");
+								VrDiagLog.Print($"[cheat] mage cheat applied play_level={playerdat.play_level} casting={playerdat.Casting} mana={playerdat.play_mana}/{playerdat.max_mana}");
 								break;
 							}
 					}

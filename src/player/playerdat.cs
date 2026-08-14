@@ -678,40 +678,38 @@ namespace Underworld
                 Exp = Math.Min(Exp + newEXP, 0x7FFF0);//experience cap
                 if (Exp <= 0x17700) //level up cap
                 {
+                    // LevelUpAt is indexed by current level (0..15). Check the bound first —
+                    // evaluating LevelUpAt[play_level] when play_level >= 16 (mage cheat used
+                    // to set 16) throws and aborts AwardXPKill after the kill fanfare, so NPCs
+                    // never enter their death animation.
                     var si_newlevelincrease = 0;
                     var newlevelpoints = Exp / 500;
-                    while (true)
+                    if (play_level >= 0x10)
                     {
-                        if (
-                            (LevelUpAt[play_level + si_newlevelincrease] <= newlevelpoints)
-                            &&
-                            (play_level + si_newlevelincrease < 0x10)
-                        )
+                        VrDiagLog.Warn($"[XP] play_level={play_level} already at/above max; skip level-up scan (expGain={newEXP} exp={Exp})");
+                    }
+                    else
+                    {
+                        while (true)
                         {
-                            si_newlevelincrease++;
-                        }
-                        else
-                        {
-                            if (si_newlevelincrease != 0)
+                            var nextLevel = play_level + si_newlevelincrease;
+                            if (nextLevel < 0x10 && LevelUpAt[nextLevel] <= newlevelpoints)
                             {
-                                LevelUp(si_newlevelincrease);
+                                si_newlevelincrease++;
                             }
-                            break;
+                            else
+                            {
+                                if (si_newlevelincrease != 0)
+                                {
+                                    LevelUp(si_newlevelincrease);
+                                }
+                                break;
+                            }
                         }
                     }
 
                     UpdateHPManaMax(false);
                     uimanager.RefreshStatsDisplay();
-                    //Check if player can level up
-                    // if (play_level < 0x10)
-                    // {
-                    //     var PointsToCheck = Exp / 500;
-                    //     var pointsNeeded = LevelUpAt[play_level];
-                    //     if (pointsNeeded <= PointsToCheck)
-                    //     {//player can level up
-                    //         LevelUp(play_level + 1);
-                    //     }
-                    // }
                 }
             }
             else
@@ -760,11 +758,10 @@ namespace Underworld
                 {
                     exp_reward = exp_reward + (((0x18 + Rng.r.Next(0x18)) * exp_reward) / 0x10);
                 }
+                VrDiagLog.Print($"[XP kill] idx={critter.index} id={critter.item_id} whoami={critter.npc_whoami} " +
+                    $"hp={critter.npc_hp} anim={critter.npc_animation} play_level={play_level} expReward={exp_reward}");
                 ChangeExperience(exp_reward);
             }
-
-            //do math for xp
-            //Debug.Print("DON'T FORGET TO GAIN EXP WHEN KILLING CRITTERS!");
         }
 
 

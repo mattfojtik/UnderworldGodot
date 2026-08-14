@@ -174,12 +174,16 @@ namespace Underworld
                 if (critter.npc_animation != npc.ANIMATION_DEATH)
                 { 
                     //if not already in the death animation
-                    if (npc.SpecialDeathCases(critter))
+                    var allowDeath = npc.SpecialDeathCases(critter);
+                    VrDiagLog.Print($"[NPC death] idx={critter.index} id={critter.item_id} whoami={critter.npc_whoami} " +
+                        $"allowDeath={allowDeath} play_level={playerdat.play_level} freezeTime={playerdat.FreezeTimeEnchantment}");
+                    if (allowDeath)
                     {
                         playerdat.AwardXPKill(critter);
                         critter.npc_animation = npc.ANIMATION_DEATH;
                         critter.AnimationFrame = 0;
                         npc.RedrawAnimation(critter);
+                        VrDiagLog.Print($"[NPC death] started death anim idx={critter.index} frame=0");
                         byte DeathSound = 0xFF;
                         if (_RES == GAME_UW2)
                         {
