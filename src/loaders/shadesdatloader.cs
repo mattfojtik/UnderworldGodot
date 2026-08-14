@@ -273,12 +273,12 @@ namespace Underworld
                 if (!_lightingLogPathAnnounced)
                 {
                     _lightingLogPathAnnounced = true;
-                    GD.Print($"[VR lighting] Debug log file: {logPath}");
+                    VrDiagLog.Print($"[VR lighting] Debug log file: {logPath}");
                 }
             }
             catch (Exception ex)
             {
-                GD.PushWarning($"[VR lighting] Could not write debug log: {ex.Message}");
+                VrDiagLog.Warn($"[VR lighting] Could not write debug log: {ex.Message}");
             }
         }
 

@@ -1,0 +1,37 @@
+---
+description: VR diagnostics must mirror to vr_diag.log (console + file)
+alwaysApply: true
+---
+
+# VR debug logging
+
+All VR diagnostic / debug output must go through `VrDiagLog` so it appears in **both** the Godot console and the session log files.
+
+## Do
+
+```csharp
+VrDiagLog.Print("[VR] …");
+VrDiagLog.Warn("[VR] …");
+VrDiagLog.Debug("[TMAP] …"); // alias of Print
+```
+
+## Do not
+
+```csharp
+GD.Print("[VR] …");           // console only — forbidden for VR diagnostics
+Debug.Print("[VR] …");        // debugger only — forbidden for VR diagnostics
+```
+
+## Log locations
+
+| Path | When |
+|------|------|
+| `logs/vr_diag.log` | Workspace (agent-readable) |
+| `%APPDATA%/Godot/app_userdata/Underworld/vr_diag.log` | Godot `user://` |
+
+Native VR (`vr: true`, not `vr_mirror`) always mirrors `VrDiagLog` to these files. Prefer prefixes like `[VR]`, `[TMAP]`, `[VR combat]`, `[MISSILE-DIAG]` for grepping.
+
+## Related
+
+- Implementation: `src/vr/VrDiagLog.cs`
+- Skill note: `.cursor/skills/underworld-vr-native/SKILL.md`

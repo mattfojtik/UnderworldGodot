@@ -8,17 +8,8 @@ namespace Underworld
     /// </summary>
     public partial class combat : UWClass
     {
-        /// <summary>Temporary self-hit diagnosis — Godot Output + Debug.</summary>
-        public static void LogMissileDiag(string message)
-        {
-            var line = $"[MISSILE-DIAG] {message}";
-            GD.Print(line);
-            Debug.Print(line);
-            if (VrDiagLog.IsEnabled)
-            {
-                VrDiagLog.Print(line);
-            }
-        }
+        /// <summary>Self-hit / missile diagnosis — console + vr_diag.log.</summary>
+        public static void LogMissileDiag(string message) => VrDiagLog.Print($"[MISSILE-DIAG] {message}");
 
         public static void MissileImpact(uwObject projectile, uwObject objectHit)
         {

@@ -8,7 +8,13 @@ namespace Underworld
             var b = new writing(obj);
             var modelNode = b.Generate3DModel(parent, name);
             SetModelRotation(parent, b);
-            AlignToWall(parent, obj, nudgeFactor: 0.08f);
+            // AlignToWall(nudgeFactor) is multiplied by WorldScaleFactor and was burying
+            // the plaque (face only ~6cm out). Depth-place from the wall plane instead.
+            PlaceWallMountedDepth(
+                parent,
+                obj,
+                b.FaceSampleLocals(),
+                tileMapRender.WallFaceStandoffWorld);
             if (uwsettings.instance.vr_debug)
             {
                 b.AttachDebugOverlay(parent);
@@ -38,15 +44,22 @@ namespace Underworld
             return true;
         }
 
-        public override Vector3[] ModelVertices()
+        /// <summary>Hank's plaque size, scaled with the world so VR plaques stay readable.</summary>
+        static float PlaqueScale => Mathf.Max(1f, tileMapRender.WorldScaleFactor);
+
+        Vector3[] FaceSampleLocals()
         {
-            var v = new Vector3[4];
-            v[0] = new Vector3(-0.0625f, 0f, 0.0625f);
-            v[1] = new Vector3(0.1875f, 0f, 0.0625f);
-            v[2] = new Vector3(0.1875f, 0.25f, 0.0625f);
-            v[3] = new Vector3(-0.0625f, 0.25f, 0.0625f);
-            return v;
+            var s = PlaqueScale;
+            return new[]
+            {
+                new Vector3(-0.0625f * s, 0f, 0.0625f * s),
+                new Vector3(0.1875f * s, 0f, 0.0625f * s),
+                new Vector3(0.1875f * s, 0.25f * s, 0.0625f * s),
+                new Vector3(-0.0625f * s, 0.25f * s, 0.0625f * s),
+            };
         }
+
+        public override Vector3[] ModelVertices() => FaceSampleLocals();
 
         public override int[] ModelTriangles(int meshNo)
         {
@@ -78,6 +91,7 @@ namespace Underworld
 
         void AttachDebugOverlay(Node3D parent)
         {
+            var s = PlaqueScale;
             var label = new Label3D
             {
                 Name = "WritingDebug",
@@ -92,7 +106,7 @@ namespace Underworld
                 Modulate = new Color(0.4f, 1f, 0.5f),
                 OutlineSize = 4,
                 OutlineModulate = Colors.Black,
-                Position = new Vector3(0f, 0.35f, 0.08f),
+                Position = new Vector3(0f, 0.35f * s, 0.08f * s),
                 Layers = main.LayerGeo | main.LayerXFER,
             };
             parent.AddChild(label);

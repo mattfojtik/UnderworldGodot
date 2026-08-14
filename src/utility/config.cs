@@ -104,6 +104,11 @@ public class uwsettings
     public string datafolder { get; set; } = "DATA";
     /// <summary>Print VR diagnostics and draw bright debug geometry in the headset.</summary>
     public bool vr_debug { get; set; } = true;
+    /// <summary>
+    /// Metres into the room from the tilemap wall plane for tmap faces (ground-truth placement).
+    /// Use ~0.1 while debugging occlusion; ship near 0.001 to sit flush on the wall.
+    /// </summary>
+    public float vr_tmap_wall_offset_m { get; set; } = 0.1f;
     /// <summary>Throttled logs for intro/menu laser and body-marker visibility (also enabled when vr_debug is true).</summary>
     public bool vr_intro_debug { get; set; } = false;
     /// <summary>Append native VR diagnostics to user://vr_diag.log and project logs/vr_diag.log.</summary>

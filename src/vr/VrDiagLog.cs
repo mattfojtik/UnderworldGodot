@@ -15,12 +15,14 @@ namespace Underworld
 		static double _sessionStartSec;
 		static string _workspaceLogPath;
 
+		/// <summary>
+		/// Native VR sessions always mirror diagnostics to <c>vr_diag.log</c> (console + file).
+		/// Mirror mode is excluded (no XR file spam on flat).
+		/// </summary>
 		public static bool IsEnabled =>
-			uwsettings.instance.vr
-			&& !uwsettings.instance.vr_mirror
-			&& (uwsettings.instance.vr_diag_log
-				|| uwsettings.instance.vr_debug
-				|| uwsettings.instance.vr_intro_debug);
+			uwsettings.instance != null
+			&& uwsettings.instance.vr
+			&& !uwsettings.instance.vr_mirror;
 
 		public static string UserLogFilePath => ProjectSettings.GlobalizePath(LogUserPath);
 
@@ -72,37 +74,46 @@ namespace Underworld
 			_sessionOpen = false;
 		}
 
-		/// <summary>Mirror to Godot output and append to vr_diag.log.</summary>
+		/// <summary>Mirror to Godot output and append to vr_diag.log (native VR).</summary>
 		public static void Print(string message)
 		{
 			GD.Print(message);
-			if (!IsEnabled)
-			{
-				return;
-			}
-
-			EnsureSession();
-			WriteRaw(FormatLine(message));
-			Flush();
+			WriteToFile(message);
 		}
 
 		public static void Warn(string message)
 		{
 			GD.PushWarning(message);
+			WriteToFile($"WARN {message}");
+		}
+
+		/// <summary>
+		/// Prefer this over bare <see cref="GD.Print"/> / <see cref="System.Diagnostics.Debug.Print"/>
+		/// for any VR diagnostic so console and log files stay in sync.
+		/// </summary>
+		public static void Debug(string message) => Print(message);
+
+		public static void Flush()
+		{
+			_userFile?.Flush();
+			_workspaceWriter?.Flush();
+		}
+
+		static void WriteToFile(string message)
+		{
 			if (!IsEnabled)
 			{
 				return;
 			}
 
 			EnsureSession();
-			WriteRaw(FormatLine($"WARN {message}"));
-			Flush();
-		}
+			if (!_sessionOpen)
+			{
+				return;
+			}
 
-		public static void Flush()
-		{
-			_userFile?.Flush();
-			_workspaceWriter?.Flush();
+			WriteRaw(FormatLine(message));
+			Flush();
 		}
 
 		static void TryOpenUserLog()

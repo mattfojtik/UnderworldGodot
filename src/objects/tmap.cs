@@ -2,72 +2,25 @@ using Godot;
 
 namespace Underworld
 {
-    public class tmap:model3D
+    /// <summary>
+    /// Wall texture map (tmap) — a full-tile textured quad mounted on a wall.
+    /// Placement is ground-truth: mesh face at local Z=0, parent snapped so that face
+    /// lies on the tilemap wall plane + <see cref="uwsettings.vr_tmap_wall_offset_m"/>.
+    /// </summary>
+    public class tmap : model3D
     {
         Node3D tmapnode;
-
-        float tmapOffset
-        {
-            get
-            {
-                if (UWTileMap.ValidTile(uwobject.tileX, uwobject.tileY))
-                {
-                    var tile = UWTileMap.current_tilemap.Tiles[uwobject.tileX, uwobject.tileY];
-                    var door = objectsearch.FindMatchInObjectChain(tile.indexObjectList, 5, 0, -1, UWTileMap.current_tilemap.LevelObjects);
-                    if (door != null && door.xpos == uwobject.xpos && door.ypos == uwobject.ypos)
-                    {
-                        return 0.1f;
-                    }
-
-                    if (IsDiagonalTile(tile.tileType))
-                        return 0.03f;
-                }
-
-                switch (uwobject.heading)
-                {
-                    case 0 when uwobject.ypos == 7:
-                        return -0.13f;
-                    case 2 when uwobject.xpos == 7:
-                        return -0.13f;
-                    case 4 when uwobject.ypos == 0:
-                        return +0.13f;
-                    case 6 when uwobject.xpos == 0:
-                        return +0.13f;
-                }
-
-                return 0.07f;
-            }
-        }
 
         /// <summary>Half-tile width / tile height in Godot metres (matches Hank's 0.6 / 1.2 at scale 1).</summary>
         static float PanelHalfWidth => tileMapRender.HalfTileWidth;
         static float PanelHeight => tileMapRender.TileWidth;
 
+        static float WallOffsetMetres =>
+            Mathf.Max(0f, uwsettings.instance?.vr_tmap_wall_offset_m ?? 0.1f);
+
         static bool IsDiagonalTile(short tileType) =>
             tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_SW
                 or UWTileMap.TILE_DIAG_NE or UWTileMap.TILE_DIAG_NW;
-
-        /// <summary>Hank's diagonal placement, using world-scale tile sizes for VR.</summary>
-        static void PlaceOnDiagonalWall(Node3D parent, uwObject obj, float extrude, short tileType)
-        {
-            parent.Position = obj.GetCoordinate();
-            const float s = 0.707106781f;
-            var inward = new Vector3(
-                tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_NE ? -s : s,
-                0f,
-                tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_SW ? -s : s).Normalized();
-            var half = PanelHalfWidth;
-            var full = PanelHeight;
-            var tileCenter = new Vector3(-(obj.tileX * full + half), parent.Position.Y, obj.tileY * full + half);
-            float minDepth = float.MaxValue;
-            foreach (var local in new Vector3[]
-            {
-                new(-half, 0f, extrude), new(half, 0f, extrude),
-                new(half, full, extrude), new(-half, full, extrude),
-            })
-                minDepth = Mathf.Min(minDepth, (parent.GlobalTransform * local - tileCenter).Dot(inward));
-            parent.Position += inward * Mathf.Clamp(0.025f - minDepth, -0.12f, 0.12f);
-        }
 
         public tmap(uwObject _uwobject)
         {
@@ -79,72 +32,99 @@ namespace Underworld
             var t = new tmap(obj);
             t.tmapnode = t.Generate3DModel(parent, name);
             SetModelRotation(parent, t);
+
+            var offsetM = WallOffsetMetres;
             var tileType = UWTileMap.ValidTile(obj.tileX, obj.tileY)
                 ? a_tilemap.Tiles[obj.tileX, obj.tileY].tileType : (short)-1;
+            string placement;
             if (IsDiagonalTile(tileType))
             {
-                PlaceOnDiagonalWall(parent, obj, t.ExtrudeForMesh(), tileType);
+                PlaceOnDiagonalWallPlane(parent, obj, t.FaceSampleLocals(), tileType, offsetM);
+                placement = "diagonal-plane";
             }
             else
             {
-                // AlignToWall multiplies nudge by WorldScaleFactor; counteract so wall offset stays ~0.1m.
-                var nudge = 0.1f / Mathf.Max(1f, tileMapRender.WorldScaleFactor);
-                model3D.AlignToWall(parent, obj, nudgeFactor: nudge);
-                if (uwsettings.instance.vr_debug)
-                {
-                    t.AttachDebugOverlay(parent, nudge);
-                }
+                // Face verts are at local Z=0; snap that plane onto the tilemap wall + offset.
+                PlaceWallMountedDepth(parent, obj, t.FaceSampleLocals(), offsetM);
+                placement = "ortho-plane";
             }
+
+            var wallDistM = t.ComputeFaceWallDistanceMetres(parent);
+            var facing = -parent.GlobalTransform.Basis.Z;
+            LogTmap(
+                $"Create tmap#{obj.index} tile=({obj.tileX},{obj.tileY}) type={tileType} "
+                + $"h={obj.heading} xy=({obj.xpos},{obj.ypos}) z={obj.zpos} owner={obj.owner} "
+                + $"placement={placement} offset={offsetM:F4}m wallDist={wallDistM:F4}m "
+                + $"pos=({parent.GlobalPosition.X:F2},{parent.GlobalPosition.Y:F2},{parent.GlobalPosition.Z:F2}) "
+                + $"facing=({facing.X:F2},{facing.Y:F2},{facing.Z:F2}) wScale={tileMapRender.WorldScaleFactor:F2}");
+
+            if (uwsettings.instance.vr_debug)
+            {
+                t.AttachDebugOverlay(parent, offsetM, wallDistM);
+            }
+
             return t;
         }
+
+        /// <summary>
+        /// Place face samples on the diagonal wall plane + standoff along the inward normal.
+        /// Same contract as <see cref="PlaceWallMountedDepth"/> for orthogonal walls.
+        /// </summary>
+        static void PlaceOnDiagonalWallPlane(Node3D parent, uwObject obj, Vector3[] faceSampleLocals, short tileType, float standoffMetres)
+        {
+            parent.Position = obj.GetCoordinate();
+            const float s = 0.707106781f;
+            var inward = new Vector3(
+                tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_NE ? -s : s,
+                0f,
+                tileType is UWTileMap.TILE_DIAG_SE or UWTileMap.TILE_DIAG_SW ? -s : s).Normalized();
+
+            // Diagonal runs through tile corners; plane passes through tile center in XZ at object Y.
+            var half = PanelHalfWidth;
+            var full = PanelHeight;
+            var planePoint = new Vector3(-(obj.tileX * full + half), parent.Position.Y, obj.tileY * full + half);
+            var basis = parent.Transform.Basis;
+
+            var minDepth = float.MaxValue;
+            foreach (var local in faceSampleLocals)
+            {
+                var depth = (parent.Position + basis * local - planePoint).Dot(inward);
+                if (depth < minDepth)
+                {
+                    minDepth = depth;
+                }
+            }
+
+            parent.Position += inward * (standoffMetres - minDepth);
+        }
+
+        static void LogTmap(string message) => VrDiagLog.Print($"[TMAP] {message}");
 
         public static bool LookAt(uwObject obj)
         {
             int textureindex = UWTileMap.current_tilemap.texture_map[obj.owner];
             uimanager.AddToMessageScroll(GameStrings.TextureDescription(textureindex));
             if ((textureindex == 142) && ((_RES != GAME_UW2)))
-            {//This is a window into the abyss.
+            {
+                //This is a window into the abyss.
                 uimanager.DisplayCutsImage(cutsfile: "cs400.n01", imageNo: playerdat.dungeon_level - 1, targetControl: uimanager.CutsSmall);
             }
             return true; //prevents the default you cannot use message
         }
 
-
-        float ExtrudeForMesh()
+        /// <summary>Face samples in local space — Z=0 is the textured plane (ground truth).</summary>
+        Vector3[] FaceSampleLocals()
         {
-            var raw = tmapOffset;
-            var scale = Mathf.Max(1f, tileMapRender.WorldScaleFactor);
-            if (scale <= 1f)
+            return new[]
             {
-                return raw;
-            }
-
-            // Small positive offsets (default 0.07, door 0.1) sit too far out at VR scale.
-            if (raw > 0f && raw <= 0.14f)
-            {
-                return raw / scale;
-            }
-
-            // Heading hacks (±0.13): negative values pull into the wall; descaling them
-            // pushes the face into the room. Instead nudge further into the wall by ~wScale texels.
-            if (raw < 0f && raw >= -0.14f)
-            {
-                return raw - (scale - 1f) * 2.2f * tileMapRender.WallTexelWorld;
-            }
-
-            return raw;
+                new Vector3(-PanelHalfWidth, 0f, 0f),
+                new Vector3(PanelHalfWidth, 0f, 0f),
+                new Vector3(PanelHalfWidth, PanelHeight, 0f),
+                new Vector3(-PanelHalfWidth, PanelHeight, 0f),
+            };
         }
 
-        public override Vector3[] ModelVertices()
-        {
-            var offset = ExtrudeForMesh();
-            Vector3[] v = new Vector3[4];
-            v[0] = new Vector3(-PanelHalfWidth, 0f, offset);
-            v[1] = new Vector3(PanelHalfWidth, 0f, offset);
-            v[2] = new Vector3(PanelHalfWidth, PanelHeight, offset);
-            v[3] = new Vector3(-PanelHalfWidth, PanelHeight, offset);
-            return v;
-        }
+        public override Vector3[] ModelVertices() => FaceSampleLocals();
 
         public override int[] ModelTriangles(int meshNo)
         {
@@ -161,13 +141,12 @@ namespace Underworld
         public override Vector2[] ModelUVs(Vector3[] verts)
         {
             Vector2[] v = new Vector2[4];
-            v[0] = new Vector2(0,1);
-            v[1] = new Vector2(1,1);
-            v[2] = new Vector2(1,0);
-            v[3]  = new Vector2(0,0);
+            v[0] = new Vector2(0, 1);
+            v[1] = new Vector2(1, 1);
+            v[2] = new Vector2(1, 0);
+            v[3] = new Vector2(0, 0);
             return v;
         }
-
 
         public override ShaderMaterial GetMaterial(int textureno, int surface)
         {
@@ -182,11 +161,8 @@ namespace Underworld
             return base.GetMaterial(0, 6);
         }
 
-        void AttachDebugOverlay(Node3D parent, float alignNudge)
+        void AttachDebugOverlay(Node3D parent, float offsetM, float wallDistM)
         {
-            var rawOffset = tmapOffset;
-            var extrude = ExtrudeForMesh();
-            var wallTex = ComputeFaceWallDistanceTexels(parent, extrude);
             var edge = EdgeLabel(uwobject);
             var label = new Label3D
             {
@@ -195,19 +171,20 @@ namespace Underworld
                        $"tile {uwobject.tileX},{uwobject.tileY} {edge}\n" +
                        $"h{uwobject.heading} xy({uwobject.xpos},{uwobject.ypos}) z{uwobject.zpos}\n" +
                        $"ci=0x{uwobject.classindex:X} owner={uwobject.owner}\n" +
-                       $"rawOff={rawOffset:F3} extrude={extrude:F4}\n" +
-                       $"alignNudge={alignNudge:F4} wScale={tileMapRender.WorldScaleFactor:F2}\n" +
-                       $"wallDist={wallTex:F2} texels",
+                       $"offset={offsetM:F4}m\n" +
+                       $"wScale={tileMapRender.WorldScaleFactor:F2}\n" +
+                       $"wallDist={wallDistM:F4}m",
                 FontSize = 48,
                 PixelSize = 0.0012f,
                 Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
                 Modulate = new Color(1f, 0.95f, 0.2f),
                 OutlineSize = 4,
                 OutlineModulate = Colors.Black,
-                Position = new Vector3(0f, PanelHeight + 0.08f, extrude + 0.02f),
+                Position = new Vector3(0f, PanelHeight + 0.08f, offsetM + 0.02f),
                 Layers = main.LayerGeo | main.LayerXFER,
             };
             parent.AddChild(label);
+            LogTmap($"debug label tmap#{uwobject.index} wallDist={wallDistM:F4}m offset={offsetM:F4}m");
         }
 
         static string EdgeLabel(uwObject obj)
@@ -219,17 +196,17 @@ namespace Underworld
             return "interior";
         }
 
-        float ComputeFaceWallDistanceTexels(Node3D parent, float extrudeLocal)
+        /// <summary>Signed metres from wall plane into the room (face center). Negative = behind wall.</summary>
+        float ComputeFaceWallDistanceMetres(Node3D parent)
         {
-            if (!model3D.TryGetWallMountFrame(uwobject, out var roomNormal, out var wallPoint, parent.GlobalPosition))
+            if (!TryGetWallMountFrame(uwobject, out var roomNormal, out var wallPoint, parent.GlobalPosition))
             {
-                return -1f;
+                return float.NaN;
             }
 
-            var faceCenterLocal = new Vector3(0f, PanelHeight * 0.5f, extrudeLocal);
+            var faceCenterLocal = new Vector3(0f, PanelHeight * 0.5f, 0f);
             var faceWorld = parent.GlobalTransform * faceCenterLocal;
-            var depthMeters = (faceWorld - wallPoint).Dot(roomNormal);
-            return depthMeters / tileMapRender.WallTexelWorld;
+            return (faceWorld - wallPoint).Dot(roomNormal);
         }
     }
 }

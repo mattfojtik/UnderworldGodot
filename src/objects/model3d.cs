@@ -386,7 +386,8 @@ namespace Underworld
         }
 
         /// <summary>
-        /// Wall plane and inward normal for edge-mounted objects (matches tilemaprender wall faces).
+        /// Tilemap wall plane and unit normal pointing into the open tile (matches RenderTile verts).
+        /// West/east: X = -tileX*W / -(tileX+1)*W. North/south: Z = tileY*W / (tileY+1)*W.
         /// </summary>
         public static bool TryGetWallMountFrame(uwObject obj, out Vector3 roomNormal, out Vector3 wallPoint, Vector3 referencePosition)
         {
@@ -398,6 +399,7 @@ namespace Underworld
 
             if (obj.xpos == 0)
             {
+                // West face at X=0 local → world -tileX*W; interior is -X.
                 roomNormal = Vector3.Left;
                 wallPoint = new Vector3(-tileX * tileWidth, referencePosition.Y, referencePosition.Z);
                 return true;
@@ -405,6 +407,7 @@ namespace Underworld
 
             if (obj.xpos == 7)
             {
+                // East face at X=-1.2 local → world -(tileX+1)*W; interior is +X.
                 roomNormal = Vector3.Right;
                 wallPoint = new Vector3(-(tileX + 1) * tileWidth, referencePosition.Y, referencePosition.Z);
                 return true;
@@ -412,14 +415,16 @@ namespace Underworld
 
             if (obj.ypos == 0)
             {
-                roomNormal = Vector3.Forward;
+                // North face at Z=0 local → world tileY*W; interior is +Z (Vector3.Back).
+                roomNormal = Vector3.Back;
                 wallPoint = new Vector3(referencePosition.X, referencePosition.Y, tileY * tileWidth);
                 return true;
             }
 
             if (obj.ypos == 7)
             {
-                roomNormal = Vector3.Back;
+                // South face at Z=1.2 local → world (tileY+1)*W; interior is -Z (Vector3.Forward).
+                roomNormal = Vector3.Forward;
                 wallPoint = new Vector3(referencePosition.X, referencePosition.Y, (tileY + 1) * tileWidth);
                 return true;
             }
@@ -428,10 +433,10 @@ namespace Underworld
         }
 
         /// <summary>
-        /// Slide a wall-mounted object along the room normal so every face sample sits exactly
-        /// standoff texels into the room from the tilemap wall plane. Keeps GetCoordinate tangential position.
+        /// Snap so every face sample sits <paramref name="standoffMetres"/> into the room from the
+        /// tilemap wall plane. Keeps GetCoordinate() tangential/height; only slides along roomNormal.
         /// </summary>
-        public static void PlaceWallMountedDepth(Node3D parent, uwObject obj, Vector3[] faceSampleLocals, float standoffTexels)
+        public static void PlaceWallMountedDepth(Node3D parent, uwObject obj, Vector3[] faceSampleLocals, float standoffMetres)
         {
             var coord = obj.GetCoordinate();
             if (!TryGetWallMountFrame(obj, out var roomNormal, out var wallPoint, coord))
@@ -439,7 +444,6 @@ namespace Underworld
                 return;
             }
 
-            var standoff = standoffTexels * tileMapRender.WallTexelWorld;
             parent.Position = coord;
             var basis = parent.Transform.Basis;
 
@@ -453,7 +457,7 @@ namespace Underworld
                 }
             }
 
-            parent.Position += roomNormal * (standoff - minDepth);
+            parent.Position += roomNormal * (standoffMetres - minDepth);
         }
 
         static void SnapToTileCenterAlongHeading(Node3D parent, uwObject obj)

@@ -438,7 +438,7 @@ namespace Underworld
                 VrController.SyncCombatAimFromHead();
                 if (uwsettings.instance.vr_debug)
                 {
-                    GD.Print($"[VR combat] strike pitch={playerdat.PlayerCameraPitch_dseg_67d6_33D6} swing={WeaponSwingTypePlayer} height={AttackSwingHeightAdjust}");
+                    VrDiagLog.Print($"[VR combat] strike pitch={playerdat.PlayerCameraPitch_dseg_67d6_33D6} swing={WeaponSwingTypePlayer} height={AttackSwingHeightAdjust}");
                 }
             }
 

@@ -11,6 +11,8 @@ VR sessions write readable log files (also mirrored to Godot console):
 | General VR / intro laser | `logs/vr_diag.log` | `%APPDATA%/Godot/app_userdata/Underworld/vr_diag.log` |
 | Combat motion CSV | `logs/vr_combat_motion.log` | `%APPDATA%/Godot/app_userdata/Underworld/vr_combat_motion.log` |
 
+Native VR always mirrors `VrDiagLog.Print`/`Warn` to those diag files (console + file). Use `VrDiagLog` for all VR diagnostics — see `.cursor/rules/vr-debug-logging.mdc`.
+
 Settings in `user://settings.json`: `vr_diag_log` (default true), `vr_debug`, `vr_intro_debug` (intro/menu snapshots), `vr_combat_motion_log`.
 
 ---
@@ -19,9 +21,6 @@ Settings in `user://settings.json`: `vr_diag_log` (default true), `vr_debug`, `v
 
 ### Close object look misses
 Nearby floor objects (e.g. bedroll) sometimes return "you see nothing" when laser should hit. Must fix with controller laser only (not head gaze).
-
-### Live status-panel offset debug mode
-Need a debug mode to nudge **X/Y/Z offsets for every head-locked status panel** live in-headset (no JSON edit + restart between trials). Persist to `settings.json` / schema when dialed in. Covers flasks, inventory, runes, stats, chain, spells, conversation, compass, gem, eyes, weapon anim, global Y, etc.
 
 ---
 
@@ -41,9 +40,18 @@ On death (and sapling), don’t show the full VR menu/status clutter — **death
 - Conversation option lines are hard to hit consistently — widen hit strips / scroll targeting.
 - Possibly broaden other status-panel aim assists where laser precision hurts UX.
 
+### Telekinesis / poles
+VR reach and feedback for telekinesis and fishing/pole use (beam length vs `CanReach` messages, laser vs DOS range parity).
+
+### Test lefty mode
+Full lefty / dominant-hand regression: lasers, HUD hand, combat/ranged gestures, status panels, menus, and throw/spell aim after panel offsets landed.
+
 ### Playtests
 - **Sleep and dreaming** (bedroll / dream sequences in VR).
 - **Level 1** full playthrough (interactions, combat, spells, UI, saves).
+
+### Investigate all sound modes
+Audit every `synth` / music+SFX backend combination (OPL, soundfont, digital VOC, UW1 vs UW2) so cast/hit/UI sounds stay correct and nothing falls back to wrong assets (e.g. intro VOC). Confirm VR avatar-positioned playback for each mode.
 
 ### Load hang (lost repro)
 A particular save once hung the game on load; file is gone but **may recur**. If it returns: capture save + `vr_diag.log`, note last UI/mode, check conversation/`blockinput`/level-load paths. Don’t over-invest without a repro.
@@ -66,11 +74,9 @@ A particular save once hung the game on load; file is gone but **may recur**. If
 
 ## Suggested additions (not yet prioritized)
 
-- **Telekinesis / pole** reach feedback in VR (beam length vs messages)
 - **Options / pause** head-locked UX parity with exploration HUD
 - **Save/load from VR** (hand HUD path) after load-hang awareness
 - **Lighting / palette** on cutscenes beyond death (intro already had special cases)
-- **Lefty / dominant-hand** full regression after panel offset debug lands
 - Periodically **merge Hank upstream** and re-run interaction parity checklist
 
 ---
@@ -84,6 +90,7 @@ A particular save once hung the game on load; file is gone but **may recur**. If
 - Mage cheat: `'` / `` ` `` / `~` while in-game (message scroll confirms)
 - Chain crop tuned for flask click separation
 - **Aimed spells + ranged (complete):** laser absolute aim; targeting cursor on laser; spawn ~2 m along laser; caster self-hit only when world-near (DOS run-into preserved; VR tile-AABB false positives ignored); cast SFX on launch; ranged charge/release = stab-plane gesture
+- **Status-panel offset tuner (side branch `vr-status-panel-offset-tuner`):** in-headset nudge; dialed offsets persisted to `settings.json` — do not merge the tuner; copy final defaults when ready
 
 ## Confirmed working
 

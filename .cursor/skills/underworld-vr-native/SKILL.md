@@ -37,6 +37,10 @@ if (uimanager.InGame && !uimanager.blockinput)
 
 `ShouldTickVrInput()` also returns false for `vr_mirror` mode.
 
+## VR debug logging
+
+Always use `VrDiagLog.Print` / `Warn` / `Debug` for VR diagnostics (never bare `GD.Print` / `Debug.Print`). Native VR mirrors to console **and** `logs/vr_diag.log` + `user://vr_diag.log`. See `.cursor/rules/vr-debug-logging.mdc`.
+
 ## XROrigin / Locomotion
 
 - Position: `SyncXrOriginFromGimbal()` follows avatar floor by **delta** each physics frame (preserves B-recenter sticky offset).
@@ -74,7 +78,7 @@ See `docs/vr-controls.md` for full scheme.
 
 ## Settings (`src/utility/config.cs`)
 
-- `vr`, `vr_mirror`, `vr_hud_panel`, `vr_hud_panel_width`, `vr_show_body`, `vr_world_scale`, `vr_invert_stick_y`, `vr_debug`
+- `vr`, `vr_mirror`, `vr_hud_panel`, `vr_hud_panel_width`, `vr_show_body`, `vr_world_scale`, `vr_tmap_wall_offset_m`, `vr_invert_stick_y`, `vr_debug`
 
 ## Lighting (VR-specific, unchanged by interaction work)
 
